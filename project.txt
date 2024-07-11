@@ -61,6 +61,8 @@ Protocol Buffers
 
 
 技術特點：
+goroutine pool
+Swagger
 Nginx
 TDD
 Docker

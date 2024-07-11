@@ -12,10 +12,10 @@ import (
 func TestGetWebSocketURLAndConnect(t *testing.T) {
 	router := initial.InitRouters()
 	w := httptest.NewRecorder()
+
+	// get websocket url
 	req, _ := http.NewRequest("GET", "/v1/game/ws-url", nil)
 	router.ServeHTTP(w, req)
-
-	// status
 	assert.Equal(t, http.StatusOK, w.Code)
 
 	// response
@@ -24,4 +24,10 @@ func TestGetWebSocketURLAndConnect(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Contains(t, response, "url")
 	assert.NotEmpty(t, response["url"])
+
+	// connect to websocket
+	wsurl := response["url"]
+	req, _ = http.NewRequest("GET", wsurl, nil)
+	assert.Equal(t, http.StatusOK, w.Code)
+
 }
