@@ -23,11 +23,11 @@ func gameMsgContentSwaper[T any](gameMsg *models.GameMsg) (*T, error) {
 	var structInstance T
 	contentBytes, err := json.Marshal(gameMsg.Content)
 	if err != nil {
-		fmt.Println("Error marshaling content:", err)
+		zap.S().Errorf("gameMsg.Content json marshal failed: %v", err)
 		return nil, err
 	}
 	if err = json.Unmarshal(contentBytes, &structInstance); err != nil {
-		fmt.Println("Error unmarshaling to PlayerPosition:", err)
+		zap.S().Errorf("json unmarshal failed: %v", err)
 		return nil, err
 	}
 	return &structInstance, nil
