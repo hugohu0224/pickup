@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>pickup</title>
+    <link rel="stylesheet" href="./static/room.css">
+</head>
+<body>
+<div class="container">
+    <div class="room" onclick="selectRoom('A')">
+        <h2>Room A</h2>
+        <p>Click to enter the room</p>
+    </div>
+    <div class="room" onclick="selectRoom('B')">
+        <h2>Room B</h2>
+        <p>Click to enter the room</p>
+    </div>
+</div>
+
+<script>
+    function selectRoom(room) {
+        window.location.href = `/v1/game/page?room=${room}`;
+    }
+</script>
+</body>
+</html>

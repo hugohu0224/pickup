@@ -1,10 +1,8 @@
 package game
 
 import (
-	"go.uber.org/zap"
 	"pickup/pkg/models"
 	"sync"
-	"time"
 )
 
 type Hub struct {
@@ -37,9 +35,6 @@ func (h *Hub) Run() {
 						Type:    models.PlayerPositionType,
 						Content: position,
 					}
-
-					zap.S().Debugf("broadcasting msg: %v", msg)
-
 					// send
 					client.Send <- msg
 				}(client, position)
@@ -59,11 +54,6 @@ func (hm *HubManager) RunHubs() {
 }
 
 func (h *Hub) startRound() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	// reset
-	h.roundTimer = h.roundDuration
 }
 
 func (h *Hub) endRound() {
@@ -72,23 +62,6 @@ func (h *Hub) endRound() {
 }
 
 func (h *Hub) StartTimer() {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			h.roundTimer--
-
-			if h.roundTimer < 0 {
-				h.endRound()
-				time.Sleep(5 * time.Second)
-				h.startRound()
-			}
-
-			//h.broadcast <- message
-		}
-	}
 }
 
 func (h *Hub) settleRound() {

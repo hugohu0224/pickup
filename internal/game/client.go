@@ -47,10 +47,10 @@ func (c *Client) ReadPump(ctx context.Context) {
 			if err != nil {
 				return
 			}
+			zap.S().Debugf("playerPosition: %v", position)
+
 			// inject Player ID
 			position.ID = c.ID
-
-			zap.S().Debugf("playerPosition: %v", position)
 
 			c.Hub.PositionChan <- position
 		case models.PlayerActionType:

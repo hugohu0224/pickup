@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="./static/login.css">
+    <title>pickup</title>
+</head>
+<body>
+<div class="content-container">
+    <h1>pickup</h1>
+    {{if .error}}
+    <div class="error-message">
+        {{.error}}
+    </div>
+    {{end}}
+    <button class="submit-btn google-btn" onclick="signInWithGoogle()">
+        <img src="./static/google.png" alt="Google logo" class="google-icon">
+        Login by Google
+    </button>
+</div>
+
+<script>
+    function signInWithGoogle() {
+        window.location.href = `/v1/auth/google`
+    }
+</script>
+</body>
+</html>

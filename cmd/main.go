@@ -6,14 +6,19 @@ import (
 )
 
 func main() {
-
 	initial.InitLogger()
 	zap.S().Infof("logger initialized")
+
+	initial.InitConfigByViper()
+	zap.S().Infof("config initialized")
+
 	initial.InitRouters()
 	zap.S().Infof("router initialized")
+
 	hubs := initial.InitHubs()
 	initial.InitHubManager(hubs)
 	zap.S().Infof("game hubs initialized")
+
 	Router := initial.InitRouters()
 	zap.S().Infof("router initialized")
 

@@ -23,3 +23,4 @@ go.work.sum
 
 # custom
 *.txt
+google_client_secret.json

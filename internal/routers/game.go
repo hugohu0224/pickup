@@ -12,5 +12,6 @@ func InitGameRouter(router *gin.RouterGroup) {
 		Router.GET("/ws-url", api.GetWebSocketURL)
 		Router.GET("/ws", api.WebsocketEndpoint)
 		Router.GET("/page", api.GetGamePage)
+		Router.GET("/room", api.GetGameRoom)
 	}
 }

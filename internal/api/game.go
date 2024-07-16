@@ -63,9 +63,12 @@ func serveWs(client *game.Client) {
 	}()
 
 	wg.Wait()
-
 }
 
 func GetGamePage(c *gin.Context) {
 	c.HTML(http.StatusOK, "game.html", gin.H{})
+}
+
+func GetGameRoom(c *gin.Context) {
+	c.HTML(http.StatusOK, "room.html", gin.H{})
 }
