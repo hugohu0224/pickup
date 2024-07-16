@@ -21,4 +21,5 @@ func InitHubManager(hubs map[string]*game.Hub) {
 		Mu:   sync.RWMutex{},
 	}
 	global.HubManager = hm
+	hm.RunHubs()
 }

@@ -2,11 +2,12 @@ package api
 
 import (
 	"context"
-	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 	"net/http"
 	"pickup/internal/game"
+	"pickup/internal/global"
 	"pickup/pkg/models"
 	"sync"
 )
@@ -30,19 +31,19 @@ func WebsocketEndpoint(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upgrade connection"})
 		return
 	}
-
-	fmt.Printf("websocket connected to server %v\n", conn.RemoteAddr())
+	zap.S().Infof("websocket connected to server %v\n", conn.RemoteAddr())
 
 	client := &game.Client{
-		ID:     "test",
-		Hub:    nil,
+		ID: "test",
+		// TODO: replace hardcode Hub id
+		Hub:    global.HubManager.GetHubById("room1"),
 		Conn:   conn,
-		Action: make(chan models.Action),
+		Action: make(chan *models.Action),
 		Done:   make(chan struct{}),
 	}
-
+	client.Hub.ClientManager.RegisterClient(client)
+	defer client.Hub.ClientManager.RemoveClient(client)
 	go serveWs(client)
-
 }
 
 func serveWs(client *game.Client) {
@@ -51,6 +52,8 @@ func serveWs(client *game.Client) {
 		client.Conn.Close()
 		cancel()
 	}()
+
+	zap.S().Infof("stast to serve client %v", client.ID)
 
 	var wg sync.WaitGroup
 	wg.Add(1)

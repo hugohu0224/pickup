@@ -1,21 +1,20 @@
 package game
 
 import (
+	"go.uber.org/zap"
 	"pickup/pkg/models"
 	"sync"
 	"time"
 )
 
-var SingleHubManager *HubManager
-
 type Hub struct {
 	ID            string
 	ClientManager *ClientManager
-	Positions     map[string][]models.Position
-	PositionChan  chan models.Position
-	MsgChan       chan models.ChatMsg
-	Scores        map[string][]models.Score
-	ScoresChan    chan map[string][]models.Score
+	Positions     sync.Map
+	PositionChan  chan *models.PlayerPosition
+	Scores        sync.Map
+	ScoresChan    chan *models.PlayerScore
+	MsgChan       chan *models.ChatMsg
 	roundTimer    int
 	roundDuration int
 	mu            sync.RWMutex
@@ -28,7 +27,35 @@ func (h *Hub) GetClientManager() *ClientManager {
 }
 
 func (h *Hub) Run() {
+	for {
+		select {
+		case position := <-h.PositionChan:
+			for client := range h.ClientManager.GetClients() {
+				go func(client *Client, position *models.PlayerPosition) {
+					// wrap msg
+					msg := &models.GameMsg{
+						Type:    models.PlayerPositionType,
+						Content: position,
+					}
 
+					zap.S().Debugf("broadcasting msg: %v", msg)
+
+					// send
+					client.Send <- msg
+				}(client, position)
+			}
+		}
+	}
+}
+
+func (hm *HubManager) RunHubs() {
+	hm.Mu.RLock()
+	defer hm.Mu.RUnlock()
+	for _, hub := range hm.Hubs {
+		go func(h *Hub) {
+			h.Run()
+		}(hub)
+	}
 }
 
 func (h *Hub) startRound() {
@@ -75,22 +102,22 @@ type HubManager struct {
 	Mu   sync.RWMutex
 }
 
-func (hm *HubManager) RunHubs() {
+func (hm *HubManager) GetHubById(id string) *Hub {
 	hm.Mu.RLock()
 	defer hm.Mu.RUnlock()
-	for _, hub := range hm.Hubs {
-		go func(h *Hub) {
-			h.Run()
-		}(hub)
+	if hub, ok := hm.Hubs[id]; ok {
+		return hub
 	}
+	return nil
 }
 
 func NewHub(id string) *Hub {
 	return &Hub{
-		ID:            "",
+		ID:            id,
 		ClientManager: NewClientManager(),
-		Positions:     make(map[string][]models.Position),
-		Scores:        make(map[string][]models.Score),
+		PositionChan:  make(chan *models.PlayerPosition),
+		ScoresChan:    make(chan *models.PlayerScore),
+		MsgChan:       make(chan *models.ChatMsg),
 		roundTimer:    0,
 		roundDuration: 0,
 		mu:            sync.RWMutex{},

@@ -3,7 +3,6 @@ package game
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"pickup/pkg/models"
@@ -14,7 +13,8 @@ type Client struct {
 	ID     string
 	Hub    *Hub
 	Conn   *websocket.Conn
-	Action chan models.Action
+	Action chan *models.Action
+	Send   chan *models.GameMsg
 	Done   chan struct{}
 	mu     sync.Mutex
 }
@@ -41,14 +41,18 @@ func (c *Client) ReadPump(ctx context.Context) {
 			zap.S().Errorf("error reading gameMsg: %v", err)
 			return
 		}
-		// TODO: continue here
 		switch gameMsg.Type {
 		case models.PlayerPositionType:
-			data, err := gameMsgContentSwaper[models.PlayerPosition](&gameMsg)
+			position, err := gameMsgContentSwaper[models.PlayerPosition](&gameMsg)
 			if err != nil {
 				return
 			}
-			fmt.Printf("data: %+v\n", data)
+			// inject Player ID
+			position.ID = c.ID
+
+			zap.S().Debugf("playerPosition: %v", position)
+
+			c.Hub.PositionChan <- position
 		case models.PlayerActionType:
 		case models.PlayerChatMsgType:
 		default:
@@ -58,6 +62,22 @@ func (c *Client) ReadPump(ctx context.Context) {
 }
 
 func (c *Client) WritePump(ctx context.Context) {
+	defer func() {
+		c.Conn.Close()
+	}()
+	for {
+		select {
+		case <-ctx.Done():
+			zap.S().Infof("WritePump for client %s stopped due to context cancellation", c.ID)
+			return
+		case msg, ok := <-c.Send:
+			if !ok {
+				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+			c.Conn.WriteJSON(msg)
+		}
+	}
 }
 
 type ClientManager struct {
