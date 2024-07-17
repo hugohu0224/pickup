@@ -24,7 +24,7 @@ func NewClient(id string, hub *Hub, conn *websocket.Conn) *Client {
 		ID:   id,
 		Hub:  hub,
 		Conn: conn,
-		Send: make(chan *models.GameMsg, 256),
+		Send: make(chan *models.GameMsg, 128),
 		Done: make(chan struct{}),
 	}
 }
@@ -61,7 +61,7 @@ func (c *Client) ReadPump(ctx context.Context) {
 			}
 			zap.S().Debugf("ReadPump playerPosition: %v", position)
 
-			// inject Player ID
+			// inject Player ID into broadcast msg
 			position.ID = c.ID
 
 			c.Hub.PositionChan <- position

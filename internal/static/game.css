@@ -65,6 +65,12 @@ body {
 }
 
 .player {
+    background-color: rgb(142, 0, 253);
+    border-radius: 50%;
+}
+
+.current-player,
+.player.current-player {
     background-color: var(--primary-color);
     border-radius: 50%;
     transition: all 0.1s ease;
