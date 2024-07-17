@@ -1,6 +1,7 @@
 package game
 
 import (
+	"go.uber.org/zap"
 	"pickup/pkg/models"
 	"sync"
 )
@@ -25,49 +26,17 @@ func (h *Hub) GetClientManager() *ClientManager {
 }
 
 func (h *Hub) Run() {
+	zap.S().Infof("Hub %s is running", h.ID)
 	for {
 		select {
 		case position := <-h.PositionChan:
-			for client := range h.ClientManager.GetClients() {
-				go func(client *Client, position *models.PlayerPosition) {
-					// wrap msg
-					msg := &models.GameMsg{
-						Type:    models.PlayerPositionType,
-						Content: position,
-					}
-					// send
-					client.Send <- msg
-				}(client, position)
+			msg := &models.GameMsg{
+				Type:    models.PlayerPositionType,
+				Content: position,
 			}
+			h.ClientManager.Broadcast(msg)
 		}
 	}
-}
-
-func (hm *HubManager) RunHubs() {
-	hm.Mu.RLock()
-	defer hm.Mu.RUnlock()
-	for _, hub := range hm.Hubs {
-		go func(h *Hub) {
-			h.Run()
-		}(hub)
-	}
-}
-
-func (h *Hub) startRound() {
-}
-
-func (h *Hub) endRound() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-}
-
-func (h *Hub) StartTimer() {
-}
-
-func (h *Hub) settleRound() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
 }
 
 type HubManager struct {
@@ -99,5 +68,7 @@ func NewHub(id string) *Hub {
 
 func (hm *HubManager) RegisterHub(h *Hub) {
 	hm.Mu.Lock()
-	defer hm.Mu.Unlock()
+	hm.Hubs[h.ID] = h
+	hm.Mu.Unlock()
+	go h.Run()
 }

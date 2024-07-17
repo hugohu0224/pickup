@@ -99,11 +99,11 @@ func GoogleAuthCallback(c *gin.Context) {
 	global.UserTokenMap.Store(hashedEmail, token.AccessToken)
 
 	// set cookies
-	c.SetCookie("session_token", token.AccessToken, 3600, "/", "localhost", true, true)
-	c.SetCookie("user_id", hashedEmail, 3600, "/", "localhost", true, true)
+	c.SetCookie("sessionToken", token.AccessToken, 3600, "/", global.Dv.GetString("DOMAIN"), true, true)
+	c.SetCookie("userId", hashedEmail, 3600, "/", global.Dv.GetString("DOMAIN"), true, false)
 
 	// redirect
-	c.Redirect(http.StatusFound, fmt.Sprintf("/v1/game/room?id=%s", hashedEmail))
+	c.Redirect(http.StatusFound, fmt.Sprintf("/v1/game/room"))
 }
 
 func hashEmailTo8Chars(email string) string {

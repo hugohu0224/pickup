@@ -6,20 +6,15 @@ import (
 	"sync"
 )
 
-func InitHubs() map[string]*game.Hub {
-	var hubs = make(map[string]*game.Hub)
-	h1 := game.NewHub("room1")
-	h2 := game.NewHub("room2")
-	hubs["room1"] = h1
-	hubs["room2"] = h2
-	return hubs
-}
-
-func InitHubManager(hubs map[string]*game.Hub) {
+func InitHubManager() {
 	hm := &game.HubManager{
-		Hubs: hubs,
+		Hubs: make(map[string]*game.Hub),
 		Mu:   sync.RWMutex{},
 	}
+	h1 := game.NewHub("A")
+	h2 := game.NewHub("B")
+	hm.RegisterHub(h1)
+	hm.RegisterHub(h2)
+
 	global.HubManager = hm
-	hm.RunHubs()
 }

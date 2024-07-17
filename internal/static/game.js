@@ -3,7 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const gridSize = 15;
     let socket;
     let playerPosition = { x: 0, y: 0 };
-    let playerId = "test";
+    let playerId
 
     fetch('http://localhost:8080/v1/game/ws-url')
         .then(response => response.json())
@@ -17,13 +17,29 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error fetching WebSocket URL:', error);
         });
 
+    function getUserIdFromCookie() {
+        const cookies = document.cookie.split(';');
+        for (let cookie of cookies) {
+            const [name, value] = cookie.trim().split('=');
+            if (name === 'userId') {
+                return value;
+            }
+        }
+        return null;
+    }
+    // assign useId to playerId
+    playerId = getUserIdFromCookie();
+    if (!playerId) {
+        console.error('Player ID not found in cookie');
+        return null;
+    }
+
     function setupWebSocket() {
         socket.onopen = function(event) {
             console.log("WebSocket connected");
         };
 
         socket.onmessage = function(event) {
-            console.log("Received Message:", event.data);
             handleServerUpdate(JSON.parse(event.data));
         };
 

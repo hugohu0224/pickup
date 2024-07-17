@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"pickup/internal/game"
 	"pickup/internal/global"
-	"pickup/pkg/models"
 	"sync"
 )
 
@@ -26,24 +25,46 @@ func GetWebSocketURL(c *gin.Context) {
 }
 
 func WebsocketEndpoint(c *gin.Context) {
+	// get userId
+	userId, err := c.Cookie("userId")
+	if err != nil {
+		zap.S().Error("failed to get user id", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get user id"})
+		return
+	}
+
+	// get roomId
+	roomId, err := c.Cookie("roomId")
+	if err != nil || len(roomId) == 0 {
+		zap.S().Error("failed to get roomId", zap.String("roomId", c.Query("room_id")))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get roomId"})
+		return
+	}
+
+	// get hub
+	hub := global.HubManager.GetHubById(roomId)
+	if hub == nil {
+		zap.S().Error("failed to get hub")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get hub"})
+		return
+	}
+
+	// http upgrade
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
+		zap.S().Error("websocket upgrade failed", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upgrade connection"})
 		return
 	}
-	zap.S().Infof("websocket connected to server %v\n", conn.RemoteAddr())
+	zap.S().Debugf("websocket connected to server %v\n", conn.RemoteAddr())
 
-	client := &game.Client{
-		ID: "test",
-		// TODO: replace hardcode Hub id
-		Hub:    global.HubManager.GetHubById("room1"),
-		Conn:   conn,
-		Action: make(chan *models.Action),
-		Done:   make(chan struct{}),
-	}
-	client.Hub.ClientManager.RegisterClient(client)
-	defer client.Hub.ClientManager.RemoveClient(client)
-	go serveWs(client)
+	// init Client
+	client := game.NewClient(userId, hub, conn)
+
+	hub.ClientManager.RegisterClient(client)
+	defer hub.ClientManager.RemoveClient(client)
+
+	serveWs(client)
 }
 
 func serveWs(client *game.Client) {
@@ -56,16 +77,24 @@ func serveWs(client *game.Client) {
 	zap.S().Infof("stast to serve client %v", client.ID)
 
 	var wg sync.WaitGroup
-	wg.Add(1)
+	wg.Add(2)
+
 	go func() {
 		defer wg.Done()
 		client.ReadPump(ctx)
+	}()
+
+	go func() {
+		defer wg.Done()
+		client.WritePump(ctx)
 	}()
 
 	wg.Wait()
 }
 
 func GetGamePage(c *gin.Context) {
+	roomId := c.Query("roomId")
+	c.SetCookie("roomId", roomId, 3600, "/", global.Dv.GetString("DOMAIN"), true, true)
 	c.HTML(http.StatusOK, "game.html", gin.H{})
 }
 

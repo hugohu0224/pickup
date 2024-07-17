@@ -19,6 +19,16 @@ type Client struct {
 	mu     sync.Mutex
 }
 
+func NewClient(id string, hub *Hub, conn *websocket.Conn) *Client {
+	return &Client{
+		ID:   id,
+		Hub:  hub,
+		Conn: conn,
+		Send: make(chan *models.GameMsg, 256),
+		Done: make(chan struct{}),
+	}
+}
+
 func gameMsgContentSwaper[T any](gameMsg *models.GameMsg) (*T, error) {
 	var structInstance T
 	contentBytes, err := json.Marshal(gameMsg.Content)
@@ -34,11 +44,13 @@ func gameMsgContentSwaper[T any](gameMsg *models.GameMsg) (*T, error) {
 
 }
 func (c *Client) ReadPump(ctx context.Context) {
+	zap.S().Infof("ReadPump start Client: %v\n", c.ID)
 	for {
 		var gameMsg models.GameMsg
 		err := c.Conn.ReadJSON(&gameMsg)
 		if err != nil {
 			zap.S().Errorf("error reading gameMsg: %v", err)
+			c.Hub.ClientManager.RemoveClient(c)
 			return
 		}
 		switch gameMsg.Type {
@@ -47,7 +59,7 @@ func (c *Client) ReadPump(ctx context.Context) {
 			if err != nil {
 				return
 			}
-			zap.S().Debugf("playerPosition: %v", position)
+			zap.S().Debugf("ReadPump playerPosition: %v", position)
 
 			// inject Player ID
 			position.ID = c.ID
@@ -56,12 +68,14 @@ func (c *Client) ReadPump(ctx context.Context) {
 		case models.PlayerActionType:
 		case models.PlayerChatMsgType:
 		default:
+			c.Hub.ClientManager.RemoveClient(c)
 			zap.S().Errorf("invalid gameMsg type: %v", gameMsg.Type)
 		}
 	}
 }
 
 func (c *Client) WritePump(ctx context.Context) {
+	zap.S().Infof("WritePump start Client: %v\n", c.ID)
 	defer func() {
 		c.Conn.Close()
 	}()
@@ -71,6 +85,7 @@ func (c *Client) WritePump(ctx context.Context) {
 			zap.S().Infof("WritePump for client %s stopped due to context cancellation", c.ID)
 			return
 		case msg, ok := <-c.Send:
+			zap.S().Debugf("WritePump by %v msg: %v", c.ID, msg.Content)
 			if !ok {
 				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
@@ -108,4 +123,17 @@ func (cm *ClientManager) GetClients() map[*Client]bool {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	return cm.clients
+}
+
+func (cm *ClientManager) Broadcast(msg *models.GameMsg) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	for client := range cm.clients {
+		select {
+		case client.Send <- msg:
+		default:
+			close(client.Send)
+			delete(cm.clients, client)
+		}
+	}
 }
