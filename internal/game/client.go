@@ -3,29 +3,36 @@ package game
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"pickup/pkg/models"
 	"sync"
+	"time"
 )
 
 type Client struct {
-	ID     string
-	Hub    *Hub
-	Conn   *websocket.Conn
-	Action chan *models.Action
-	Send   chan *models.GameMsg
-	Done   chan struct{}
-	mu     sync.Mutex
+	ID              string
+	Hub             *Hub
+	Conn            *websocket.Conn
+	Action          chan *models.Action
+	Send            chan *models.GameMsg
+	Done            chan struct{}
+	DefaultPosition models.Position
+	mu              sync.Mutex
 }
 
-func NewClient(id string, hub *Hub, conn *websocket.Conn) *Client {
+func NewClient(id string, hub *Hub, conn *websocket.Conn, position *models.Position) *Client {
 	return &Client{
-		ID:   id,
-		Hub:  hub,
-		Conn: conn,
-		Send: make(chan *models.GameMsg, 128),
-		Done: make(chan struct{}),
+		ID:              id,
+		Hub:             hub,
+		Conn:            conn,
+		Action:          nil,
+		Send:            make(chan *models.GameMsg, 128),
+		Done:            make(chan struct{}),
+		DefaultPosition: *position,
+		mu:              sync.Mutex{},
 	}
 }
 
@@ -43,21 +50,28 @@ func gameMsgContentSwaper[T any](gameMsg *models.GameMsg) (*T, error) {
 	return &structInstance, nil
 
 }
-func (c *Client) ReadPump(ctx context.Context) {
+func (c *Client) ReadPump(ctx context.Context) error {
 	zap.S().Infof("ReadPump start Client: %v\n", c.ID)
+	// init start position
+	startPosition := &models.PlayerPosition{
+		Valid:    true,
+		ID:       c.ID,
+		Position: c.DefaultPosition,
+	}
+	c.Hub.PositionChan <- startPosition
+
 	for {
 		var gameMsg models.GameMsg
 		err := c.Conn.ReadJSON(&gameMsg)
 		if err != nil {
-			zap.S().Errorf("error reading gameMsg: %v", err)
 			c.Hub.ClientManager.RemoveClient(c)
-			return
+			return err
 		}
 		switch gameMsg.Type {
 		case models.PlayerPositionType:
 			position, err := gameMsgContentSwaper[models.PlayerPosition](&gameMsg)
 			if err != nil {
-				return
+				return err
 			}
 			zap.S().Debugf("ReadPump playerPosition: %v", position)
 
@@ -74,7 +88,7 @@ func (c *Client) ReadPump(ctx context.Context) {
 	}
 }
 
-func (c *Client) WritePump(ctx context.Context) {
+func (c *Client) WritePump(ctx context.Context) error {
 	zap.S().Infof("WritePump start Client: %v\n", c.ID)
 	defer func() {
 		c.Conn.Close()
@@ -82,28 +96,32 @@ func (c *Client) WritePump(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			zap.S().Infof("WritePump for client %s stopped due to context cancellation", c.ID)
-			return
+			errors.New(fmt.Sprintf("WritePump for client %s stopped due to context cancellation", c.ID))
 		case msg, ok := <-c.Send:
 			zap.S().Debugf("WritePump by %v msg: %v", c.ID, msg.Content)
 			if !ok {
+				errors.New(fmt.Sprintf("failed to send message to client: %v", c.ID))
 				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
 			}
-			c.Conn.WriteJSON(msg)
+			err := c.Conn.WriteJSON(msg)
+			if err != nil {
+				return err
+			}
 		}
 	}
 }
 
 type ClientManager struct {
-	clients map[*Client]bool
-	mu      sync.RWMutex
+	clients     map[*Client]bool
+	clientsById map[string]*Client
+	mu          sync.RWMutex
 }
 
 func NewClientManager() *ClientManager {
 	return &ClientManager{
-		clients: make(map[*Client]bool),
-		mu:      sync.RWMutex{},
+		clients:     make(map[*Client]bool),
+		clientsById: make(map[string]*Client),
+		mu:          sync.RWMutex{},
 	}
 }
 
@@ -111,6 +129,7 @@ func (cm *ClientManager) RegisterClient(client *Client) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.clients[client] = true
+	cm.clientsById[client.ID] = client
 }
 
 func (cm *ClientManager) RemoveClient(client *Client) {
@@ -125,7 +144,13 @@ func (cm *ClientManager) GetClients() map[*Client]bool {
 	return cm.clients
 }
 
-func (cm *ClientManager) Broadcast(msg *models.GameMsg) {
+func (cm *ClientManager) GetClientByID(id string) *Client {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.clientsById[id]
+}
+
+func (cm *ClientManager) BroadcastAll(msg *models.GameMsg) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	for client := range cm.clients {
@@ -135,5 +160,21 @@ func (cm *ClientManager) Broadcast(msg *models.GameMsg) {
 			close(client.Send)
 			delete(cm.clients, client)
 		}
+	}
+}
+
+func (cm *ClientManager) SendToClient(userId string, msg *models.GameMsg) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	client := cm.GetClientByID(userId)
+	if client == nil {
+		zap.S().Errorf("client %s not found", userId)
+		return
+	}
+
+	select {
+	case client.Send <- msg:
+	case <-time.After(2 * time.Second):
+		zap.S().Warnf("Timeout sending message to client %s", userId)
 	}
 }

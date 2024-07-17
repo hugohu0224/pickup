@@ -2,14 +2,12 @@ package global
 
 import (
 	"github.com/spf13/viper"
-	"pickup/internal/game"
 	"sync"
 )
 
 var (
-	HubManager     *game.HubManager
-	Dv             *viper.Viper // default viper
-	Gv             *viper.Viper // google client viper
+	Dv             *viper.Viper // default config
+	Gv             *viper.Viper // google client config
 	UserTokenMap   sync.Map
-	UserLoginState sync.Map // map[hashedEmail]bool if player into the room and playing
+	UserLoginState sync.Map // map[hashedEmail]bool
 )
