@@ -6,8 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastConfirmedPosition = {x: 0, y: 0};
     let playerId;
     let players = {};
-    let pendingMoves = [];
-    let sequenceNumber = 0;
+    let obstacles = [];
 
     fetch('http://localhost:8080/v1/game/ws-url')
         .then(response => response.json())
@@ -15,7 +14,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const wsUrl = data.url;
             socket = new WebSocket(wsUrl);
             setupWebSocket();
-            initGame();
         })
         .catch(error => {
             console.error('Error fetching WebSocket URL:', error);
@@ -39,13 +37,37 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
+    function addObstacle(obstacle) {
+        obstacles.push(obstacle);
+        updateObstacleOnBoard(obstacle);
+    }
+
+    function updateObstacleOnBoard(obstacle) {
+        const cellId = `cell-${obstacle.x}-${obstacle.y}`;
+        const cell = document.getElementById(cellId);
+        if (cell) {
+            cell.classList.add('obstacle');
+        }
+    }
+
     function setupWebSocket() {
         socket.onopen = function (event) {
             console.log("WebSocket connected");
+            initGame();
         };
 
-        socket.onmessage = function (event) {
-            handleServerUpdate(JSON.parse(event.data));
+        socket.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            switch(data.type) {
+                case 'obstaclePosition':
+                    addObstacle(data.content);
+                    break;
+                case 'playerPosition':
+                    handleMoveResponse(data.content);
+                    break;
+                default:
+                    handleServerUpdate(data);
+            }
         };
 
         socket.onclose = function (event) {
@@ -67,12 +89,22 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // initial player position
-        playerPosition = {x: Math.floor(gridSize / 2), y: Math.floor(gridSize / 2)};
+        // init position
         lastConfirmedPosition = {...playerPosition};
-        updatePlayerPosition({id: playerId, position: playerPosition});
+
         document.addEventListener('keydown', handleKeyPress);
-        sendMoveRequest('initial');
+
+        obstacles.forEach(updateObstacleOnBoard);
+
+        if (socket.readyState === WebSocket.OPEN) {
+            sendMoveRequest('initial');
+        } else {
+            console.log('WebSocket not ready, waiting...');
+            socket.addEventListener('open', () => {
+                sendMoveRequest('initial');
+            });
+        }
+        console.log('Game initialized');
     }
 
     function handleKeyPress(event) {
@@ -151,17 +183,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (isValidMove(playerPosition, newPosition)) {
-                sequenceNumber++;
-                pendingMoves.push({seqNum: sequenceNumber, position: newPosition});
-
                 updatePlayerPosition({id: playerId, position: newPosition}, 'unconfirmed');
 
                 const message = JSON.stringify({
                     type: 'playerPosition',
                     content: {
                         id: playerId,
-                        position: newPosition,
-                        sequenceNumber: sequenceNumber
+                        position: newPosition
                     }
                 });
                 socket.send(message);
@@ -215,10 +243,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.valid) {
                 lastConfirmedPosition = response.position;
                 playerPosition = response.position;
-                pendingMoves = pendingMoves.filter(move => move.seqNum > response.sequenceNumber);
             } else {
                 playerPosition = lastConfirmedPosition;
-                pendingMoves = pendingMoves.filter(move => move.seqNum <= response.sequenceNumber);
                 notifyUser("Invalid move: " + (response.reason || "Unknown reason"));
             }
             updatePlayerPosition({id: playerId, position: playerPosition});
@@ -235,7 +261,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (gameState.currentPlayer && gameState.currentPlayer.id === playerId) {
             playerPosition = gameState.currentPlayer.position;
             lastConfirmedPosition = {...playerPosition};
-            pendingMoves = [];
         }
     }
 
@@ -258,5 +283,4 @@ document.addEventListener('DOMContentLoaded', () => {
             playerElement.textContent += ' (You)';
         }
     }
-
 });

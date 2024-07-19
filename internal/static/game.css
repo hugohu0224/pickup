@@ -1,7 +1,7 @@
 :root {
     --grid-size: 15;
     --cell-size: 45px;
-    --primary-color: #2C3E50;
+    --primary-color: #0073b1;
     --secondary-color: #f5f7fa;
     --border-color: #e1e4e8;
 }
@@ -70,7 +70,7 @@ body {
 }
 
 .other-player {
-    background-color: rgb(142, 0, 253);
+    background-color: rgb(157, 0, 79);
 }
 
 .current-player {
@@ -79,4 +79,9 @@ body {
 
 .unconfirmed {
     opacity: 0.7;
+}
+
+.obstacle {
+    background-color: #1b1b1b;
+    border-radius: 50%;
 }

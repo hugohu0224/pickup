@@ -10,8 +10,13 @@ func InitHubManager() {
 		Hubs: make(map[string]*game.Hub),
 		Mu:   sync.RWMutex{},
 	}
+
 	h1 := game.NewHub(hm, "A")
 	h2 := game.NewHub(hm, "B")
+
+	h1.InitObstacles()
+	h2.InitObstacles()
+
 	hm.RegisterHub(h1)
 	hm.RegisterHub(h2)
 

@@ -23,16 +23,15 @@ type Client struct {
 	mu              sync.Mutex
 }
 
-func NewClient(id string, hub *Hub, conn *websocket.Conn, position *models.Position) *Client {
+func NewClient(id string, hub *Hub, conn *websocket.Conn) *Client {
 	return &Client{
-		ID:              id,
-		Hub:             hub,
-		Conn:            conn,
-		Action:          nil,
-		Send:            make(chan *models.GameMsg, 128),
-		Done:            make(chan struct{}),
-		DefaultPosition: *position,
-		mu:              sync.Mutex{},
+		ID:     id,
+		Hub:    hub,
+		Conn:   conn,
+		Action: nil,
+		Send:   make(chan *models.GameMsg, 128),
+		Done:   make(chan struct{}),
+		mu:     sync.Mutex{},
 	}
 }
 
@@ -52,13 +51,6 @@ func gameMsgContentSwaper[T any](gameMsg *models.GameMsg) (*T, error) {
 }
 func (c *Client) ReadPump(ctx context.Context) error {
 	zap.S().Infof("ReadPump start Client: %v\n", c.ID)
-	// init start position
-	startPosition := &models.PlayerPosition{
-		Valid:    true,
-		ID:       c.ID,
-		Position: c.DefaultPosition,
-	}
-	c.Hub.PositionChan <- startPosition
 
 	for {
 		var gameMsg models.GameMsg

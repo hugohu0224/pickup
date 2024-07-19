@@ -1,9 +1,9 @@
 package game
 
 import (
-	"errors"
 	"fmt"
 	"go.uber.org/zap"
+	"math/rand"
 	"pickup/internal/global"
 	"pickup/pkg/models"
 	"sync"
@@ -16,8 +16,9 @@ type Hub struct {
 	ClientManager *ClientManager
 	HubManager    *HubManager
 	StartPosition *models.StartPosition
-	Occupied      sync.Map // for occupied check => map[positionString]userId
-	Positions     sync.Map // for player move validate => map[userId]position
+	Occupied      sync.Map // for occupied check => map[positionString]objectId
+	Obstacles     []*models.Position
+	Positions     sync.Map // for player move validate => map[userId]*models.Position
 	PositionChan  chan *models.PlayerPosition
 	Scores        sync.Map
 	ScoresChan    chan *models.PlayerScore
@@ -25,6 +26,72 @@ type Hub struct {
 	roundTimer    int
 	roundDuration int
 	mu            sync.RWMutex
+}
+
+func (h *Hub) InitObstacles() {
+	numObstacles := 15
+	for i := 0; i < numObstacles; i++ {
+		x := rand.Intn(global.Dv.GetInt("GRIDSIZE") - 1)
+		y := rand.Intn(global.Dv.GetInt("GRIDSIZE") - 1)
+		positionString := fmt.Sprintf("%d-%d", x, y)
+
+		// check if occupied
+		if _, occupied := h.Occupied.LoadOrStore(positionString, "obstacle"); !occupied {
+			obstacle := &models.Position{X: x, Y: y}
+			h.Occupied.Store(positionString, "obstacle")
+			h.Obstacles = append(h.Obstacles, obstacle)
+		} else {
+			i-- // retry if occupied
+		}
+	}
+}
+
+func (h *Hub) SendObstaclesToClient(client *Client) {
+	for _, obstacle := range h.Obstacles {
+		msg := &models.GameMsg{
+			Type:    "obstaclePosition",
+			Content: obstacle,
+		}
+		client.Send <- msg
+	}
+}
+
+func (h *Hub) SendAllPositionToClient(client *Client) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	h.Positions.Range(func(key, value interface{}) bool {
+		userId, ok := key.(string)
+		if !ok {
+			zap.S().Errorf("SendAllPositionsToClient error, userId type: %T", userId)
+			return false
+		}
+
+		// skip self
+		if userId == client.ID {
+			return true
+		}
+
+		position, ok := value.(models.Position)
+		if !ok {
+			zap.S().Errorf("SendAllPositionsToClient error, position type: %T", position)
+			return false
+		}
+
+		playPosition := &models.PlayerPosition{
+			Valid:    true,
+			ID:       userId,
+			Position: position,
+		}
+
+		msg := &models.GameMsg{
+			Type:    models.PlayerPositionType,
+			Content: playPosition,
+		}
+
+		client.Send <- msg
+
+		return true
+	})
 }
 
 func (h *Hub) GetClientManager() *ClientManager {
@@ -44,30 +111,31 @@ func (h *Hub) Run() {
 }
 
 func (h *Hub) handelPositionUpdate(position *models.PlayerPosition) {
-	// init
 	userId := position.ID
-	newPosition := &models.Position{
+
+	newPosition := models.Position{
 		X: position.X,
 		Y: position.Y,
 	}
+
 	currentPosition, ok := h.Positions.Load(userId)
 	if !ok {
 		zap.S().Errorf("no current position found for user %s", userId)
 		return
 	}
 	// check move
-	if !IsValidMove(currentPosition.(*models.Position), newPosition) {
-		zap.S().Infof("%v occupied by %v", newPosition, h.ID)
+	if !IsValidMove(currentPosition.(models.Position), newPosition) {
+		zap.S().Infof("Invalid move from user %s", userId)
 		h.sendInvalidPositionToClient(userId)
 		return
 	}
 
 	// check occupied
 	newPositionString := fmt.Sprintf("%d-%d", newPosition.X, newPosition.Y)
-	_, ok = h.Occupied.Load(newPositionString)
+	occupiedUserId, ok := h.Occupied.Load(newPositionString)
 	if ok {
-		errMsg := fmt.Sprintf("\"%v occupied by %v\", newPositionString, h.ID")
-		zap.S().Errorf(errMsg)
+		errMsg := fmt.Sprintf("%v occupied by %v\n", newPositionString, occupiedUserId.(string))
+		zap.S().Debug(errMsg)
 		h.sendErrorToClient(userId, errMsg)
 		// still need to send server position to sync front-end position
 		h.sendInvalidPositionToClient(userId)
@@ -75,7 +143,7 @@ func (h *Hub) handelPositionUpdate(position *models.PlayerPosition) {
 	}
 
 	// remove previous position
-	currentPositionString := fmt.Sprintf("%d-%d", currentPosition.(*models.Position).X, currentPosition.(*models.Position).Y)
+	currentPositionString := fmt.Sprintf("%d-%d", currentPosition.(models.Position).X, currentPosition.(models.Position).Y)
 	h.Occupied.Delete(currentPositionString)
 	h.Positions.Delete(userId)
 
@@ -102,14 +170,12 @@ func (h *Hub) sendInvalidPositionToClient(userId string) {
 
 	// set to invalid for front-end check
 	currentPosition.Valid = false
-
-	// send
 	msg := &models.GameMsg{
 		Type:    models.PlayerPositionType,
 		Content: currentPosition,
 	}
 
-	// invalid position no broadcast
+	// invalid position only sent to client itself
 	h.ClientManager.SendToClient(userId, msg)
 }
 
@@ -144,32 +210,48 @@ func (h *Hub) GetPositionByUserId(userId string) *models.PlayerPosition {
 	playPosition := &models.PlayerPosition{
 		Valid:    false,
 		ID:       userId,
-		Position: models.Position{X: position.(*models.Position).X, Y: position.(*models.Position).Y},
+		Position: models.Position{X: position.(models.Position).X, Y: position.(models.Position).Y},
 	}
 
 	return playPosition
 }
 
-func (h *Hub) GetStartPosition() (int, int, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	// check if full
-	if h.StartPosition.UserCount >= 3 {
-		errMsg := "fail to get start position, due to full user in hub"
-		zap.S().Error(errMsg)
-		return -1, -1, errors.New(errMsg)
+func (h *Hub) InitStartPosition(client *Client) {
+	tryScope := global.Dv.GetInt("GRIDSIZE") - 1
+	maxAttempts := tryScope * tryScope
+	attempts := 0
+
+	zap.S().Infof("Initializing start position for client %s", client.ID)
+
+	for attempts < maxAttempts {
+		x := rand.Intn(tryScope)
+		y := rand.Intn(tryScope)
+		positionString := fmt.Sprintf("%d-%d", x, y)
+
+		// try to store Occupied
+		if _, occupied := h.Occupied.Load(positionString); !occupied {
+			startPosition := &models.PlayerPosition{
+				Valid: true,
+				ID:    client.ID,
+				Position: models.Position{
+					X: x,
+					Y: y,
+				},
+			}
+			h.Positions.Store(client.ID, startPosition.Position)
+			h.PositionChan <- startPosition
+
+			zap.S().Infof("Start position set for client %s at (%d, %d) after %d attempts", client.ID, x, y, attempts+1)
+			return
+		}
+
+		attempts++
 	}
 
-	// get a position
-	position := h.StartPosition.Site[h.StartPosition.UserCount]
-	x := position["x"]
-	y := position["y"]
-	h.StartPosition.UserCount++
-
-	return x, y, nil
+	zap.S().Errorf("failed to find start position for client %s after %d attempts", client.ID, maxAttempts)
 }
 
-func IsValidMove(currentPosition *models.Position, newPosition *models.Position) bool {
+func IsValidMove(currentPosition models.Position, newPosition models.Position) bool {
 	// check grid
 	if newPosition.X < 0 || newPosition.X >= global.Dv.GetInt("GRIDSIZE") ||
 		newPosition.Y < 0 || newPosition.Y >= global.Dv.GetInt("GRIDSIZE") {
