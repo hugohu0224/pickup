@@ -2,9 +2,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const gameBoard = document.getElementById('game-board');
     const gridSize = 15;
     let socket;
-    let playerPosition = { x: 0, y: 0 };
+    let playerPosition = {x: 0, y: 0};
+    let lastConfirmedPosition = {x: 0, y: 0};
     let playerId;
     let players = {};
+    let pendingMoves = [];
+    let sequenceNumber = 0;
 
     fetch('http://localhost:8080/v1/game/ws-url')
         .then(response => response.json())
@@ -29,26 +32,27 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
+    // assign useId to playerId
     playerId = getUserIdFromCookie();
     if (!playerId) {
         console.error('Player ID not found in cookie');
-        return;
+        return null;
     }
 
     function setupWebSocket() {
-        socket.onopen = function(event) {
+        socket.onopen = function (event) {
             console.log("WebSocket connected");
         };
 
-        socket.onmessage = function(event) {
+        socket.onmessage = function (event) {
             handleServerUpdate(JSON.parse(event.data));
         };
 
-        socket.onclose = function(event) {
+        socket.onclose = function (event) {
             console.log("WebSocket closed");
         };
 
-        socket.onerror = function(error) {
+        socket.onerror = function (error) {
             console.error("WebSocket error:", error);
         };
     }
@@ -63,96 +67,135 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        playerPosition = { x: Math.floor(gridSize / 2), y: Math.floor(gridSize / 2) };
-        updatePlayerPosition({ id: playerId, position: playerPosition });
-
+        // initial player position
+        playerPosition = {x: Math.floor(gridSize / 2), y: Math.floor(gridSize / 2)};
+        lastConfirmedPosition = {...playerPosition};
+        updatePlayerPosition({id: playerId, position: playerPosition});
         document.addEventListener('keydown', handleKeyPress);
         sendMoveRequest('initial');
     }
 
     function handleKeyPress(event) {
         let direction;
-        switch(event.key) {
-            case 'ArrowUp': direction = 'up'; break;
-            case 'ArrowDown': direction = 'down'; break;
-            case 'ArrowLeft': direction = 'left'; break;
-            case 'ArrowRight': direction = 'right'; break;
-            default: return;
+        switch (event.key) {
+            case 'ArrowUp':
+                direction = 'up';
+                break;
+            case 'ArrowDown':
+                direction = 'down';
+                break;
+            case 'ArrowLeft':
+                direction = 'left';
+                break;
+            case 'ArrowRight':
+                direction = 'right';
+                break;
+            default:
+                return;
         }
         sendMoveRequest(direction);
     }
 
-    function updatePlayerPosition(playerData) {
+    function updatePlayerPosition(playerData, status = 'confirmed') {
         if (!playerData || !playerData.position) {
             console.error('Invalid player data:', playerData);
             return;
         }
 
-        const cell = document.getElementById(`cell-${playerData.position.x}-${playerData.position.y}`);
+        // remove old position
+        const oldCell = document.querySelector(`.player[data-player-id="${playerData.id}"]`);
+        if (oldCell) {
+            oldCell.classList.remove('player', 'current-player', 'other-player', 'unconfirmed');
+            oldCell.removeAttribute('data-player-id');
+        }
+
+        // update position
+        const cellId = `cell-${playerData.position.x}-${playerData.position.y}`;
+        const cell = document.getElementById(cellId);
+
         if (cell) {
-            const oldCell = document.querySelector(`.player[data-player-id="${playerData.id}"]`);
-            if (oldCell) {
-                oldCell.classList.remove('player', 'current-player');
-                oldCell.removeAttribute('data-player-id');
+            // check if occupied
+            const existingPlayerId = cell.getAttribute('data-player-id');
+            if (existingPlayerId && existingPlayerId !== playerData.id) {
+                return;
             }
 
             cell.classList.add('player');
             cell.setAttribute('data-player-id', playerData.id);
-            if (playerData.id === playerId) {
-                playerPosition = playerData.position;
-                cell.classList.add('current-player');
-            }
 
-            updatePlayerList(playerData);
+            if (playerData.id === playerId) {
+                cell.classList.add('current-player');
+                cell.classList.remove('other-player');
+                if (status === 'unconfirmed') {
+                    cell.classList.add('unconfirmed');
+                } else {
+                    cell.classList.remove('unconfirmed');
+                }
+            } else {
+                cell.classList.add('other-player');
+                cell.classList.remove('current-player', 'unconfirmed');
+            }
         }
+
+        players[playerData.id] = playerData.position;
+        updatePlayerList(playerData);
     }
 
     function sendMoveRequest(direction) {
         if (socket && socket.readyState === WebSocket.OPEN) {
-            let newPosition = { ...playerPosition };
-            let shouldSend = false;
-
-            switch(direction) {
-                case 'up':
-                    if (newPosition.y > 0) {
-                        newPosition.y--;
-                        shouldSend = true;
-                    }
-                    break;
-                case 'down':
-                    if (newPosition.y < gridSize - 1) {
-                        newPosition.y++;
-                        shouldSend = true;
-                    }
-                    break;
-                case 'left':
-                    if (newPosition.x > 0) {
-                        newPosition.x--;
-                        shouldSend = true;
-                    }
-                    break;
-                case 'right':
-                    if (newPosition.x < gridSize - 1) {
-                        newPosition.x++;
-                        shouldSend = true;
-                    }
-                    break;
-                case 'initial':
-                    shouldSend = true;
-                    break;
+            let newPosition;
+            if (direction === 'initial') {
+                newPosition = playerPosition;
+            } else {
+                newPosition = calculateNewPosition(playerPosition, direction);
             }
 
-            if (shouldSend) {
+            if (isValidMove(playerPosition, newPosition)) {
+                sequenceNumber++;
+                pendingMoves.push({seqNum: sequenceNumber, position: newPosition});
+
+                updatePlayerPosition({id: playerId, position: newPosition}, 'unconfirmed');
+
                 const message = JSON.stringify({
                     type: 'playerPosition',
                     content: {
                         id: playerId,
-                        position: newPosition
+                        position: newPosition,
+                        sequenceNumber: sequenceNumber
                     }
                 });
                 socket.send(message);
             }
+        } else {
+            console.log('WebSocket is not open. Cannot send move request.');
         }
+    }
+
+    function calculateNewPosition(currentPosition, direction) {
+        let newPosition = {...currentPosition};
+        switch (direction) {
+            case 'up':
+                newPosition.y = Math.max(0, newPosition.y - 1);
+                break;
+            case 'down':
+                newPosition.y = Math.min(gridSize - 1, newPosition.y + 1);
+                break;
+            case 'left':
+                newPosition.x = Math.max(0, newPosition.x - 1);
+                break;
+            case 'right':
+                newPosition.x = Math.min(gridSize - 1, newPosition.x + 1);
+                break;
+        }
+        return newPosition;
+    }
+
+    function isValidMove(currentPosition, newPosition) {
+        return (
+            newPosition.x >= 0 && newPosition.x < gridSize &&
+            newPosition.y >= 0 && newPosition.y < gridSize &&
+            (Math.abs(newPosition.x - currentPosition.x) + Math.abs(newPosition.y - currentPosition.y) === 1)
+        );
     }
 
     function handleServerUpdate(update) {
@@ -161,28 +204,47 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (update.type === 'playerInfo') {
             playerId = update.content.id;
         } else if (update.type === 'playerPosition') {
-            updatePlayerPosition(update.content);
+            handleMoveResponse(update.content);
+        } else if (update.type === 'error') {
+
+        }
+    }
+
+    function handleMoveResponse(response) {
+        if (response.id === playerId) {
+            if (response.valid) {
+                lastConfirmedPosition = response.position;
+                playerPosition = response.position;
+                pendingMoves = pendingMoves.filter(move => move.seqNum > response.sequenceNumber);
+            } else {
+                playerPosition = lastConfirmedPosition;
+                pendingMoves = pendingMoves.filter(move => move.seqNum <= response.sequenceNumber);
+                notifyUser("Invalid move: " + (response.reason || "Unknown reason"));
+            }
+            updatePlayerPosition({id: playerId, position: playerPosition});
+        } else {
+            updatePlayerPosition(response);
         }
     }
 
     function updateGameState(gameState) {
-        document.querySelectorAll('.player').forEach(el => {
-            el.classList.remove('player', 'current-player');
-            el.removeAttribute('data-player-id');
-        });
-
         for (let player of gameState.players) {
             updatePlayerPosition(player);
         }
+
+        if (gameState.currentPlayer && gameState.currentPlayer.id === playerId) {
+            playerPosition = gameState.currentPlayer.position;
+            lastConfirmedPosition = {...playerPosition};
+            pendingMoves = [];
+        }
+    }
+
+    function notifyUser(message) {
+        console.log(message);
     }
 
     function updatePlayerList(player) {
         const playerList = document.getElementById('player-list');
-        if (!playerList) {
-            console.error('Player list element not found');
-            return;
-        }
-
         let playerElement = document.getElementById(`player-${player.id}`);
 
         if (!playerElement) {
@@ -196,4 +258,5 @@ document.addEventListener('DOMContentLoaded', () => {
             playerElement.textContent += ' (You)';
         }
     }
+
 });

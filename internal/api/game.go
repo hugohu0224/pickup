@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"pickup/internal/game"
 	"pickup/internal/global"
+	"pickup/pkg/models"
 	"sync"
 )
 
@@ -42,7 +43,8 @@ func WebsocketEndpoint(c *gin.Context) {
 	}
 
 	// get hub
-	hub := global.HubManager.GetHubById(roomId)
+
+	hub := game.Hm.GetHubById(roomId)
 	if hub == nil {
 		zap.S().Error("failed to get hub")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get hub"})
@@ -58,38 +60,62 @@ func WebsocketEndpoint(c *gin.Context) {
 	}
 	zap.S().Debugf("websocket connected to server %v\n", conn.RemoteAddr())
 
-	// init Client
-	client := game.NewClient(userId, hub, conn)
+	// new Client
+	x, y, err := hub.GetStartPosition()
+	if err != nil {
+		zap.S().Error("failed to get start position", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get start position"})
+		return
+	}
+	startPosition := &models.Position{
+		X: x,
+		Y: y,
+	}
+	client := game.NewClient(userId, hub, conn, startPosition)
 
+	// init client to hub
+	hub.Positions.Store(userId, startPosition)
 	hub.ClientManager.RegisterClient(client)
-	defer hub.ClientManager.RemoveClient(client)
-
 	serveWs(client)
 }
 
 func serveWs(client *game.Client) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer func() {
-		client.Conn.Close()
-		cancel()
-	}()
-
-	zap.S().Infof("stast to serve client %v", client.ID)
+	defer cancel()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
 
+	errChan := make(chan error, 2)
+
 	go func() {
 		defer wg.Done()
-		client.ReadPump(ctx)
+		if err := client.ReadPump(ctx); err != nil {
+			errChan <- err
+		}
 	}()
 
 	go func() {
 		defer wg.Done()
-		client.WritePump(ctx)
+		if err := client.WritePump(ctx); err != nil {
+			errChan <- err
+		}
 	}()
 
-	wg.Wait()
+	go func() {
+		wg.Wait()
+		close(errChan)
+	}()
+
+	for err := range errChan {
+		if err != nil {
+			zap.S().Errorf("Error in client pump: %v", err)
+			break
+		}
+	}
+
+	client.Hub.CleanupClient(client)
+	zap.S().Infof("finished serving client %v", client.ID)
 }
 
 func GetGamePage(c *gin.Context) {

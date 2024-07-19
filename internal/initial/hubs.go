@@ -2,7 +2,6 @@ package initial
 
 import (
 	"pickup/internal/game"
-	"pickup/internal/global"
 	"sync"
 )
 
@@ -11,10 +10,10 @@ func InitHubManager() {
 		Hubs: make(map[string]*game.Hub),
 		Mu:   sync.RWMutex{},
 	}
-	h1 := game.NewHub("A")
-	h2 := game.NewHub("B")
+	h1 := game.NewHub(hm, "A")
+	h2 := game.NewHub(hm, "B")
 	hm.RegisterHub(h1)
 	hm.RegisterHub(h2)
 
-	global.HubManager = hm
+	game.Hm = hm
 }
