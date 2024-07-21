@@ -26,6 +26,7 @@ type Hub struct {
 	roundTimer    int
 	roundDuration int
 	mu            sync.RWMutex
+	obstaclesMu   sync.RWMutex
 }
 
 func (h *Hub) InitObstacles() {
@@ -44,6 +45,18 @@ func (h *Hub) InitObstacles() {
 			i-- // retry if occupied
 		}
 	}
+}
+
+func (h *Hub) UpdateObstacles(newObstacles []*models.Position) {
+	h.obstaclesMu.Lock()
+	defer h.obstaclesMu.Unlock()
+	h.Obstacles = newObstacles
+}
+
+func (h *Hub) GetObstacles() []*models.Position {
+	h.obstaclesMu.RLock()
+	defer h.obstaclesMu.RUnlock()
+	return h.Obstacles
 }
 
 func (h *Hub) SendObstaclesToClient(client *Client) {
