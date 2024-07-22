@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"pickup/internal/game"
 	"pickup/internal/global"
-	"pickup/pkg/models"
 	"sync"
 )
 
@@ -43,7 +42,6 @@ func WebsocketEndpoint(c *gin.Context) {
 	}
 
 	// get hub
-
 	hub := game.Hm.GetHubById(roomId)
 	if hub == nil {
 		zap.S().Error("failed to get hub")
@@ -61,21 +59,13 @@ func WebsocketEndpoint(c *gin.Context) {
 	zap.S().Debugf("websocket connected to server %v\n", conn.RemoteAddr())
 
 	// new Client
-	x, y, err := hub.GetStartPosition()
-	if err != nil {
-		zap.S().Error("failed to get start position", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get start position"})
-		return
-	}
-	startPosition := &models.Position{
-		X: x,
-		Y: y,
-	}
-	client := game.NewClient(userId, hub, conn, startPosition)
+	client := game.NewClient(userId, hub, conn)
 
-	// init client to hub
-	hub.Positions.Store(userId, startPosition)
+	// init client info to hub
 	hub.ClientManager.RegisterClient(client)
+	hub.InitStartPosition(client)
+	hub.SendObstaclesToClient(client)
+	hub.SendAllPositionToClient(client)
 	serveWs(client)
 }
 
