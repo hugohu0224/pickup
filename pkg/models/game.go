@@ -12,8 +12,9 @@ type PlayerPosition struct {
 }
 
 type PlayerScore struct {
-	ID    string `json:"id"`
-	Score int    `json:"score"`
+	Valid    bool   `json:"valid"`
+	ID       string `json:"id"`
+	Position `json:"position"`
 }
 
 type ChatMsg struct {
@@ -46,6 +47,8 @@ type GameMsgType string
 const (
 	PlayerPositionType GameMsgType = "playerPosition"
 	PlayerActionType   GameMsgType = "playerAction"
+	CoinActionType     GameMsgType = "coinAction"
+	CoinCollectedType  GameMsgType = "coinCollected"
 	PlayerChatMsgType  GameMsgType = "playerChatMsg"
 	ErrorType          GameMsgType = "errorChatMsg"
 	AlertType          GameMsgType = "alertMsg"

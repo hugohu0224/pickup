@@ -65,6 +65,7 @@ func WebsocketEndpoint(c *gin.Context) {
 	hub.ClientManager.RegisterClient(client)
 	hub.InitStartPosition(client)
 	hub.SendObstaclesToClient(client)
+	hub.SendCoinToClient(client)
 	hub.SendAllPositionToClient(client)
 	serveWs(client)
 }

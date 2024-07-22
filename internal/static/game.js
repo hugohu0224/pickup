@@ -1,12 +1,39 @@
 document.addEventListener('DOMContentLoaded', async () => {
     const gameBoard = document.getElementById('game-board');
-    let gridSize = 15; // 默認值，將被配置覆蓋
+    let gridSize = 15;
     let socket;
     let playerPosition = {x: 0, y: 0};
     let lastConfirmedPosition = {x: 0, y: 0};
     let playerId;
     let players = {};
     let obstacles = [];
+    let coins = [];
+
+    function addCoin(coin) {
+        coins.push(coin);
+        updateCoinOnBoard(coin);
+    }
+
+    function updateCoinOnBoard(coin) {
+        const cellId = `cell-${coin.x}-${coin.y}`;
+        const cell = document.getElementById(cellId);
+        if (cell) {
+            cell.classList.add('coin');
+        }
+    }
+
+    function removeCoin(coin) {
+        const index = coins.findIndex(c => c.x === coin.x && c.y === coin.y);
+        if (index !== -1) {
+            coins.splice(index, 1);
+            const cellId = `cell-${coin.x}-${coin.y}`;
+            const cell = document.getElementById(cellId);
+            if (cell) {
+                cell.classList.remove('coin');
+                cell.classList.remove('player-on-coin');
+            }
+        }
+    }
 
     async function fetchConfig() {
         try {
@@ -83,6 +110,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                 case 'playerPosition':
                     handleMoveResponse(data.content);
                     break;
+                case 'coinPosition':
+                    addCoin(data.content);
+                    break;
+                case 'coinCollected':
+                    handleCoinCollected(data.content);
+                    break;
                 default:
                     handleServerUpdate(data);
             }
@@ -125,6 +158,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('Game initialized');
     }
 
+    function sendCoinCollectionRequest() {
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            const coinAtPosition = coins.find(coin => coin.x === playerPosition.x && coin.y === playerPosition.y);
+            if (coinAtPosition) {
+                const message = JSON.stringify({
+                    type: 'coinAction',
+                    content: {
+                        id: playerId,
+                        position: playerPosition
+                    }
+                });
+                socket.send(message);
+            } else {
+                console.log("No coin at current position to collect");
+            }
+        }
+    }
+
     function handleKeyPress(event) {
         let direction;
         switch (event.key) {
@@ -140,10 +191,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             case 'ArrowRight':
                 direction = 'right';
                 break;
+            case ' ':
+                sendCoinCollectionRequest();
+                return;
             default:
                 return;
         }
-        sendMoveRequest(direction);
+        if (direction) {
+            sendMoveRequest(direction);
+        }
     }
 
     function updatePlayerPosition(playerData, status = 'confirmed') {
@@ -184,6 +240,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else {
                 cell.classList.add('other-player');
                 cell.classList.remove('current-player', 'unconfirmed');
+            }
+
+            // keep show coin
+            if (cell.classList.contains('coin')) {
+                cell.classList.add('player-on-coin');
             }
         }
 
@@ -252,7 +313,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         } else if (update.type === 'playerPosition') {
             handleMoveResponse(update.content);
         } else if (update.type === 'error') {
-            // 處理錯誤
         }
     }
 
@@ -301,4 +361,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             playerElement.textContent += ' (You)';
         }
     }
+
+    function handleCoinCollected(data) {
+        if (data.valid) {
+            removeCoin(data.position);
+            // updateScore(data.newScore);
+            // notifyUser("Coin collected! Score: " + data.newScore);
+        } else {
+            notifyUser("Failed to collect coin: " + data.reason);
+        }
+    }
+
+    function updateScore(newScore) {
+        const scoreElement = document.getElementById('score');
+        if (scoreElement) {
+            scoreElement.textContent = "Score: " + newScore;
+        }
+    }
+
 });

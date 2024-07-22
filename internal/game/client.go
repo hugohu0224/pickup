@@ -49,6 +49,7 @@ func gameMsgContentSwaper[T any](gameMsg *models.GameMsg) (*T, error) {
 	return &structInstance, nil
 
 }
+
 func (c *Client) ReadPump(ctx context.Context) error {
 	zap.S().Infof("ReadPump start Client: %v\n", c.ID)
 
@@ -67,11 +68,16 @@ func (c *Client) ReadPump(ctx context.Context) error {
 			}
 			zap.S().Debugf("ReadPump playerPosition: %v", position)
 
-			// inject Player ID into broadcast msg
 			position.ID = c.ID
-
 			c.Hub.PositionChan <- position
-		case models.PlayerActionType:
+		case models.CoinActionType:
+			position, err := gameMsgContentSwaper[models.PlayerScore](&gameMsg)
+			if err != nil {
+				return err
+			}
+			position.ID = c.ID
+			c.Hub.ScoresChan <- position
+
 		case models.PlayerChatMsgType:
 		default:
 			c.Hub.ClientManager.RemoveClient(c)

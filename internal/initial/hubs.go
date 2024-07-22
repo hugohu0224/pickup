@@ -17,6 +17,9 @@ func InitHubManager() {
 	h1.InitObstacles()
 	h2.InitObstacles()
 
+	h1.InitCoins()
+	h2.InitCoins()
+
 	hm.RegisterHub(h1)
 	hm.RegisterHub(h2)
 

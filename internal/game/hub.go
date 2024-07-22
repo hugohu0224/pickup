@@ -16,8 +16,9 @@ type Hub struct {
 	ClientManager *ClientManager
 	HubManager    *HubManager
 	StartPosition *models.StartPosition
-	Occupied      sync.Map // for occupied check => map[positionString]objectId
+	Occupied      sync.Map // for occupied check => map[positionString]*models.Position
 	Obstacles     []*models.Position
+	Coins         sync.Map // map[positionString]*models.Position
 	Positions     sync.Map // for player move validate => map[userId]*models.Position
 	PositionChan  chan *models.PlayerPosition
 	Scores        sync.Map
@@ -30,7 +31,7 @@ type Hub struct {
 }
 
 func (h *Hub) InitObstacles() {
-	numObstacles := 15
+	numObstacles := global.Dv.GetInt("OBSNUMBER")
 	for i := 0; i < numObstacles; i++ {
 		x := rand.Intn(global.Dv.GetInt("GRIDSIZE") - 1)
 		y := rand.Intn(global.Dv.GetInt("GRIDSIZE") - 1)
@@ -39,12 +40,41 @@ func (h *Hub) InitObstacles() {
 		// check if occupied
 		if _, occupied := h.Occupied.LoadOrStore(positionString, "obstacle"); !occupied {
 			obstacle := &models.Position{X: x, Y: y}
-			h.Occupied.Store(positionString, "obstacle")
+			h.Occupied.Store(positionString, obstacle)
 			h.Obstacles = append(h.Obstacles, obstacle)
 		} else {
 			i-- // retry if occupied
 		}
 	}
+}
+
+func (h *Hub) InitCoins() {
+	numCoins := global.Dv.GetInt("COINNUMBER")
+	for i := 0; i < numCoins; i++ {
+		x := rand.Intn(global.Dv.GetInt("GRIDSIZE") - 1)
+		y := rand.Intn(global.Dv.GetInt("GRIDSIZE") - 1)
+		positionString := fmt.Sprintf("%d-%d", x, y)
+
+		// check if occupied
+		if _, occupied := h.Occupied.Load(positionString); !occupied {
+			//h.Occupied.Store(positionString, "coins") // coin will not occupied
+			position := &models.Position{X: x, Y: y}
+			h.Coins.Store(positionString, position)
+		} else {
+			i-- // retry if occupied
+		}
+	}
+}
+
+func (h *Hub) SendCoinToClient(client *Client) {
+	h.Coins.Range(func(key, value interface{}) bool {
+		msg := &models.GameMsg{
+			Type:    "coinPosition",
+			Content: value.(*models.Position),
+		}
+		client.Send <- msg
+		return true
+	})
 }
 
 func (h *Hub) UpdateObstacles(newObstacles []*models.Position) {
@@ -119,8 +149,27 @@ func (h *Hub) Run() {
 		select {
 		case position := <-h.PositionChan:
 			h.handelPositionUpdate(position)
+		case playerScore := <-h.ScoresChan:
+			h.handelScoreUpdate(playerScore)
+
 		}
 	}
+}
+
+func (h *Hub) handelScoreUpdate(playerScore *models.PlayerScore) {
+	// remove coin
+	positionString := fmt.Sprintf("%d-%d", playerScore.Position.X, playerScore.Position.Y)
+	h.Coins.Delete(positionString)
+	h.broadcastCollectedCoin(playerScore)
+}
+
+func (h *Hub) broadcastCollectedCoin(playerScore *models.PlayerScore) {
+	playerScore.Valid = true
+	msg := &models.GameMsg{
+		Type:    models.CoinCollectedType,
+		Content: playerScore,
+	}
+	h.ClientManager.BroadcastAll(msg)
 }
 
 func (h *Hub) handelPositionUpdate(position *models.PlayerPosition) {
@@ -253,14 +302,11 @@ func (h *Hub) InitStartPosition(client *Client) {
 			}
 			h.Positions.Store(client.ID, startPosition.Position)
 			h.PositionChan <- startPosition
-
-			zap.S().Infof("Start position set for client %s at (%d, %d) after %d attempts", client.ID, x, y, attempts+1)
+			zap.S().Infof("start position set for client %s at (%d, %d) after %d attempts", client.ID, x, y, attempts+1)
 			return
 		}
-
 		attempts++
 	}
-
 	zap.S().Errorf("failed to find start position for client %s after %d attempts", client.ID, maxAttempts)
 }
 
@@ -326,15 +372,6 @@ func NewHub(hm *HubManager, id string) *Hub {
 		ID:            id,
 		ClientManager: NewClientManager(),
 		HubManager:    hm,
-		StartPosition: &models.StartPosition{
-			Site: []map[string]int{
-				{"x": 0, "y": 0},
-				{"x": 14, "y": 0},
-				{"x": 0, "y": 14},
-				{"x": 14, "y": 14},
-			},
-			UserCount: 0,
-		},
 		Occupied:      sync.Map{},
 		Positions:     sync.Map{},
 		PositionChan:  make(chan *models.PlayerPosition),

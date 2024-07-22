@@ -41,6 +41,7 @@ body {
     align-items: center;
     font-size: 16px;
     transition: background-color 0.3s ease;
+    position: relative;
 }
 
 .cell:hover {
@@ -71,22 +72,24 @@ body {
     justify-content: center;
     align-items: center;
     font-size: 35px;
+    position: relative;
+    z-index: 1;
 }
 
 .current-player::after {
-    content: '🧑';
-}
-
-.other-player {
-    background-color: rgba(255, 35, 148, 0.49);
+    content: '🧍‍♂️';
 }
 
 .other-player::after {
-    content: '👤';
+    content: '🧍';
 }
 
 .current-player {
     background-color: var(--primary-color);
+}
+
+.other-player {
+    background-color: rgba(255, 35, 148, 0.49);
 }
 
 .unconfirmed {
@@ -106,4 +109,24 @@ body {
     align-items: center;
     width: 100%;
     height: 100%;
+}
+
+.cell.coin::before {
+    content: '🪙';
+    font-size: 30px;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 3;
+}
+
+.cell.coin-collected {
+    animation: collect-effect 0.5s;
+}
+
+@keyframes collect-effect {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
 }
