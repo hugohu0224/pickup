@@ -1,2 +1,19 @@
-DOMAIN: localhost
-GRIDSIZE: 15
+current_env: dev
+
+default: &default
+  GRIDSIZE: 15
+  COOKIE_SECURE: false
+
+dev:
+  <<: *default
+  MODE: dev
+  DOMAIN: localhost
+  PORT: 8080
+  ENDPOINT: localhost:8080
+
+prd:
+  <<: *default
+  MODE: pro
+  DOMAIN: go-pickup.com
+  ENDPOINT: go-pickup.com
+  COOKIE_SECURE: true

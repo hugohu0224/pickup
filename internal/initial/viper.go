@@ -15,6 +15,19 @@ func InitConfigByViper() {
 	global.Dv.AddConfigPath("../")
 	global.Dv.AddConfigPath("../../")
 
+	// read default config
+	if err := global.Dv.ReadInConfig(); err != nil {
+		zap.S().Fatalf("error reading default config file: %v", err)
+	}
+	zap.S().Infof("default config file used: %s", global.Dv.ConfigFileUsed())
+
+	// set env
+	currentEnv := global.Dv.GetString("current_env")
+	if currentEnv == "" {
+		panic("current_env not set in config file")
+	}
+	global.Dv = global.Dv.Sub(currentEnv)
+
 	// google client viper
 	global.Gv = viper.New()
 	global.Gv.SetConfigName("google_client_secret")
@@ -23,13 +36,7 @@ func InitConfigByViper() {
 	global.Gv.AddConfigPath("../")
 	global.Gv.AddConfigPath("../../")
 
-	// Read default config
-	if err := global.Dv.ReadInConfig(); err != nil {
-		zap.S().Fatalf("error reading default config file: %v", err)
-	}
-	zap.S().Infof("default config file used: %s", global.Dv.ConfigFileUsed())
-
-	// Read Google client config
+	// read Google client config
 	if err := global.Gv.ReadInConfig(); err != nil {
 		zap.S().Fatalf("error reading Google client config file: %v", err)
 	}

@@ -110,7 +110,7 @@ func serveWs(client *game.Client) {
 
 func GetGamePage(c *gin.Context) {
 	roomId := c.Query("roomId")
-	c.SetCookie("roomId", roomId, 3600, "/", global.Dv.GetString("DOMAIN"), true, true)
+	c.SetCookie("roomId", roomId, 3600, "/", global.Dv.GetString("DOMAIN"), false, true)
 	c.HTML(http.StatusOK, "game.html", gin.H{})
 }
 

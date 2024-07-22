@@ -1,6 +1,6 @@
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     const gameBoard = document.getElementById('game-board');
-    const gridSize = 15;
+    let gridSize = 15; // 默認值，將被配置覆蓋
     let socket;
     let playerPosition = {x: 0, y: 0};
     let lastConfirmedPosition = {x: 0, y: 0};
@@ -8,16 +8,34 @@ document.addEventListener('DOMContentLoaded', () => {
     let players = {};
     let obstacles = [];
 
-    fetch('http://localhost:8080/v1/game/ws-url')
-        .then(response => response.json())
-        .then(data => {
-            const wsUrl = data.url;
-            socket = new WebSocket(wsUrl);
-            setupWebSocket();
-        })
-        .catch(error => {
-            console.error('Error fetching WebSocket URL:', error);
-        });
+    async function fetchConfig() {
+        try {
+            const response = await fetch('/v1/config/js');
+            if (!response.ok) {
+                throw new Error('Failed to fetch config');
+            }
+            return await response.json();
+        } catch (error) {
+            console.error('Error fetching config:', error);
+            return null;
+        }
+    }
+
+    try {
+        const config = await fetchConfig();
+        if (!config) {
+            throw new Error('Failed to load configuration');
+        }
+
+        gridSize = config.gridsize || gridSize;
+        const wsUrl = `ws://${config.endpoint}/v1/game/ws`;
+        socket = new WebSocket(wsUrl);
+        setupWebSocket();
+
+    } catch (error) {
+        console.error('Error initializing game:', error);
+        return;
+    }
 
     function getUserIdFromCookie() {
         const cookies = document.cookie.split(';');
@@ -30,11 +48,11 @@ document.addEventListener('DOMContentLoaded', () => {
         return null;
     }
 
-    // assign useId to playerId
+    // assign userId to playerId
     playerId = getUserIdFromCookie();
     if (!playerId) {
         console.error('Player ID not found in cookie');
-        return null;
+        return;
     }
 
     function addObstacle(obstacle) {
@@ -234,7 +252,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (update.type === 'playerPosition') {
             handleMoveResponse(update.content);
         } else if (update.type === 'error') {
-
+            // 處理錯誤
         }
     }
 

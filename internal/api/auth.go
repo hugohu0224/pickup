@@ -54,8 +54,10 @@ func getUserInfo(ctx context.Context, token *oauth2.Token) (*GoogleUserInfo, err
 
 func RedirectToGoogleAuth(c *gin.Context) {
 
+	endpoint := global.Dv.GetString("ENDPOINT")
+
 	googleOauthConfig = &oauth2.Config{
-		RedirectURL:  "http://localhost:8080/v1/auth/google/callback",
+		RedirectURL:  fmt.Sprintf("http://%s/v1/auth/google/callback", endpoint),
 		ClientID:     global.Gv.GetString("web.client_id"),
 		ClientSecret: global.Gv.GetString("web.client_secret"),
 		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email"},
@@ -99,8 +101,8 @@ func GoogleAuthCallback(c *gin.Context) {
 	global.UserTokenMap.Store(hashedEmail, token.AccessToken)
 
 	// set cookies
-	c.SetCookie("sessionToken", token.AccessToken, 3600, "/", global.Dv.GetString("DOMAIN"), true, true)
-	c.SetCookie("userId", hashedEmail, 3600, "/", global.Dv.GetString("DOMAIN"), true, false)
+	c.SetCookie("sessionToken", token.AccessToken, 3600, "/", global.Dv.GetString("DOMAIN"), false, true)
+	c.SetCookie("userId", hashedEmail, 3600, "/", global.Dv.GetString("DOMAIN"), false, false)
 
 	// redirect
 	c.Redirect(http.StatusFound, fmt.Sprintf("/v1/game/room"))
