@@ -1,2 +1,2 @@
 # pickup
-Dive into a fast-paced, strategy-packed world where quick thinking and swift movements are your keys to victory. In "pickup", you'll navigate a dynamic 10x10 grid, competing against other players in real-time to gather resources to get score and outsmart your opponents.
+Pickup is a fast-paced multiplayer game where players compete in a 15x15 grid to collect points and use strategic power-ups.
