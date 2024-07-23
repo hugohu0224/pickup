@@ -7,30 +7,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     let playerId;
     let players = {};
     let obstacles = [];
-    let coins = [];
+    let items = [];
 
-    function addCoin(coin) {
-        coins.push(coin);
-        updateCoinOnBoard(coin);
+    function addItem(item) {
+        items.push(item);
+        updateItemOnBoard(item);
     }
 
-    function updateCoinOnBoard(coin) {
-        const cellId = `cell-${coin.x}-${coin.y}`;
+    function updateItemOnBoard(item) {
+        const cellId = `cell-${item.position.x}-${item.position.y}`;
         const cell = document.getElementById(cellId);
         if (cell) {
-            cell.classList.add('coin');
+            cell.classList.add('item', `item-${item.item.type}`);
         }
     }
 
-    function removeCoin(coin) {
-        const index = coins.findIndex(c => c.x === coin.x && c.y === coin.y);
+    function removeItem(item) {
+        const index = items.findIndex(i => i.position.x === item.position.x && i.position.y === item.position.y);
         if (index !== -1) {
-            coins.splice(index, 1);
-            const cellId = `cell-${coin.x}-${coin.y}`;
+            const removedItem = items.splice(index, 1)[0];
+            const cellId = `cell-${item.position.x}-${item.position.y}`;
             const cell = document.getElementById(cellId);
             if (cell) {
-                cell.classList.remove('coin');
-                cell.classList.remove('player-on-coin');
+                cell.classList.remove('item', `item-${removedItem.item.type}`, 'player-on-item');
             }
         }
     }
@@ -110,11 +109,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                 case 'playerPosition':
                     handleMoveResponse(data.content);
                     break;
-                case 'coinPosition':
-                    addCoin(data.content);
+                case 'itemPosition':
+                    addItem(data.content);
                     break;
-                case 'coinCollected':
-                    handleCoinCollected(data.content);
+                case 'itemCollected':
+                    handleItemCollected(data.content);
                     break;
                 default:
                     handleServerUpdate(data);
@@ -158,12 +157,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log('Game initialized');
     }
 
-    function sendCoinCollectionRequest() {
+    function sendItemActionRequest() {
         if (socket && socket.readyState === WebSocket.OPEN) {
-            const coinAtPosition = coins.find(coin => coin.x === playerPosition.x && coin.y === playerPosition.y);
-            if (coinAtPosition) {
+            const itemAtPosition = items.find(item => item.position.x === playerPosition.x && item.position.y === playerPosition.y);
+            if (itemAtPosition) {
                 const message = JSON.stringify({
-                    type: 'coinAction',
+                    type: 'itemAction',
                     content: {
                         id: playerId,
                         position: playerPosition
@@ -192,7 +191,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 direction = 'right';
                 break;
             case ' ':
-                sendCoinCollectionRequest();
+                sendItemActionRequest();
                 return;
             default:
                 return;
@@ -208,6 +207,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             return;
         }
 
+
+
         // remove old position
         const oldCell = document.querySelector(`.player[data-player-id="${playerData.id}"]`);
         if (oldCell) {
@@ -218,6 +219,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         // update position
         const cellId = `cell-${playerData.position.x}-${playerData.position.y}`;
         const cell = document.getElementById(cellId);
+
+        if (cell.classList.contains('item')) {
+            cell.classList.add('player-on-item');
+        } else {
+            cell.classList.remove('player-on-item');
+        }
 
         if (cell) {
             // check if occupied
@@ -237,7 +244,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 } else {
                     cell.classList.remove('unconfirmed');
                 }
-            } else {
+            }
+
+            else {
                 cell.classList.add('other-player');
                 cell.classList.remove('current-player', 'unconfirmed');
             }
@@ -362,11 +371,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    function handleCoinCollected(data) {
+    function handleItemCollected(data) {
         if (data.valid) {
-            removeCoin(data.position);
-            // updateScore(data.newScore);
-            // notifyUser("Coin collected! Score: " + data.newScore);
+            removeItem(data);
+            switch (data.item.type) {
+                case 'coin':
+                    break
+            }
         } else {
             notifyUser("Failed to collect coin: " + data.reason);
         }

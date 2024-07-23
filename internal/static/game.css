@@ -78,6 +78,7 @@ body {
 
 .current-player::after {
     content: '🧍‍♂️';
+    z-index: 4;
 }
 
 .other-player::after {
@@ -111,17 +112,28 @@ body {
     height: 100%;
 }
 
-.cell.coin::before {
-    content: '🪙';
-    font-size: 30px;
+.cell.item {
+    position: relative;
+}
+
+.cell.item::before {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
+    font-size: 30px;
     z-index: 3;
 }
 
-.cell.coin-collected {
+.cell.item-coin::before {
+    content: '💰️';
+}
+
+.cell.player-on-item .item::before {
+    opacity: 0.5;
+}
+
+.cell.item-collected {
     animation: collect-effect 0.5s;
 }
 

@@ -14,11 +14,8 @@ func InitHubManager() {
 	h1 := game.NewHub(hm, "A")
 	h2 := game.NewHub(hm, "B")
 
-	h1.InitObstacles()
-	h2.InitObstacles()
-
-	h1.InitCoins()
-	h2.InitCoins()
+	h1.InitAllItems()
+	h2.InitAllItems()
 
 	hm.RegisterHub(h1)
 	hm.RegisterHub(h2)

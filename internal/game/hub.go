@@ -1,6 +1,7 @@
 package game
 
 import (
+	"errors"
 	"fmt"
 	"go.uber.org/zap"
 	"math/rand"
@@ -18,11 +19,11 @@ type Hub struct {
 	StartPosition  *models.StartPosition
 	OccupiedInMap  sync.Map // for occupied check => map[positionString]*models.Position
 	ObstaclesInMap []*models.Position
-	ItemsInMap     sync.Map // map[positionString]*models.CoinItem
+	ItemsInMap     sync.Map // map[positionString]*models.ItemAction
 	PositionsInMap sync.Map // for player move validate => map[userId]*models.Position
 	PositionChan   chan *models.PlayerPosition
 	Scores         sync.Map
-	ScoresChan     chan *models.PlayerScore
+	ActionChan     chan *models.ItemAction
 	MsgChan        chan *models.ChatMsg
 	roundTimer     int
 	roundDuration  int
@@ -48,6 +49,11 @@ func (h *Hub) InitObstacles() {
 	}
 }
 
+func (h *Hub) InitAllItems() {
+	h.InitObstacles()
+	h.InitCoins()
+}
+
 func (h *Hub) InitCoins() {
 	numCoins := global.Dv.GetInt("COINNUMBER")
 	for i := 0; i < numCoins; i++ {
@@ -55,22 +61,26 @@ func (h *Hub) InitCoins() {
 		y := rand.Intn(global.Dv.GetInt("GRIDSIZE") - 1)
 		positionString := fmt.Sprintf("%d-%d", x, y)
 
-		// check if occupied
+		// check if not occupied
 		if _, occupied := h.OccupiedInMap.Load(positionString); !occupied {
-			//h.OccupiedInMap.Store(positionString, "coins") // coin will not occupied
-			position := &models.Position{X: x, Y: y}
-			h.ItemsInMap.Store(positionString, position)
+			itemAction := &models.ItemAction{
+				ID:       "",
+				Valid:    true,
+				Item:     &models.Item{Type: "coin", Value: 10},
+				Position: &models.Position{X: x, Y: y},
+			}
+			h.ItemsInMap.Store(positionString, itemAction)
 		} else {
 			i-- // retry if occupied
 		}
 	}
 }
 
-func (h *Hub) SendCoinToClient(client *Client) {
+func (h *Hub) SendAllItemToClient(client *Client) {
 	h.ItemsInMap.Range(func(key, value interface{}) bool {
 		msg := &models.GameMsg{
-			Type:    "coinPosition",
-			Content: value.(*models.Position),
+			Type:    "itemPosition",
+			Content: value.(*models.ItemAction),
 		}
 		client.Send <- msg
 		return true
@@ -147,27 +157,41 @@ func (h *Hub) Run() {
 	zap.S().Infof("Hub %s is running", h.ID)
 	for {
 		select {
-		case position := <-h.PositionChan:
-			h.handelPositionUpdate(position)
-		case playerScore := <-h.ScoresChan:
-			h.handelScoreUpdate(playerScore)
-
+		case playerPosition := <-h.PositionChan:
+			h.handelPositionUpdate(playerPosition)
+		case itemAction := <-h.ActionChan:
+			h.handelItemAction(itemAction)
 		}
 	}
 }
 
-func (h *Hub) handelScoreUpdate(playerScore *models.PlayerScore) {
-	// remove coin
-	positionString := fmt.Sprintf("%d-%d", playerScore.Position.X, playerScore.Position.Y)
-	h.ItemsInMap.Delete(positionString)
-	h.broadcastCollectedCoin(playerScore)
+func (h *Hub) getItemInMap(positionString string) (*models.ItemAction, error) {
+	item, ok := h.ItemsInMap.Load(positionString)
+	if !ok {
+		return nil, errors.New(fmt.Sprintf("faild to load item: %v, %v", positionString, h.ID))
+	}
+	return item.(*models.ItemAction), nil
 }
 
-func (h *Hub) broadcastCollectedCoin(playerScore *models.PlayerScore) {
-	playerScore.Valid = true
+func (h *Hub) handelItemAction(itemAction *models.ItemAction) {
+	positionString := fmt.Sprintf("%d-%d", itemAction.Position.X, itemAction.Position.Y)
+	itemInMap, err := h.getItemInMap(positionString)
+	if err != nil {
+		zap.S().Errorf("failed to get itemImMap: %v", positionString)
+	}
+	switch itemInMap.Item.Type {
+	case "coin":
+		// remove item after activate
+		h.ItemsInMap.Delete(positionString)
+		h.broadcastCollectedCoin(itemAction)
+	}
+}
+
+func (h *Hub) broadcastCollectedCoin(itemAction *models.ItemAction) {
+	itemAction.Valid = true
 	msg := &models.GameMsg{
-		Type:    models.CoinCollectedType,
-		Content: playerScore,
+		Type:    models.ItemCollectedType,
+		Content: itemAction,
 	}
 	h.ClientManager.BroadcastAll(msg)
 }
@@ -376,7 +400,7 @@ func NewHub(hm *HubManager, id string) *Hub {
 		PositionsInMap: sync.Map{},
 		PositionChan:   make(chan *models.PlayerPosition),
 		Scores:         sync.Map{},
-		ScoresChan:     make(chan *models.PlayerScore),
+		ActionChan:     make(chan *models.ItemAction),
 		MsgChan:        make(chan *models.ChatMsg),
 		roundTimer:     0,
 		roundDuration:  0,

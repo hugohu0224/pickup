@@ -11,9 +11,16 @@ type PlayerPosition struct {
 	*Position `json:"position"`
 }
 
-type CoinItem struct {
-	ItemType string `json:"item_type"`
-	Value    string `json:"value"`
+type Item struct {
+	Type  string `json:"type"`
+	Value int    `json:"value"`
+}
+
+type ItemAction struct {
+	Valid     bool   `json:"valid"`
+	ID        string `json:"id"`
+	*Item     `json:"item"`
+	*Position `json:"position"`
 }
 
 type ItemType string
@@ -22,13 +29,6 @@ const (
 	BoxCoin ItemType = "boxCoin"
 	OneCoin ItemType = "oneCoin"
 )
-
-type PlayerScore struct {
-	Valid     bool   `json:"valid"`
-	ID        string `json:"id"`
-	*Position `json:"position"`
-	*CoinItem `json:"coin_item"`
-}
 
 type ChatMsg struct {
 	ID      string `json:"id"`
@@ -59,9 +59,8 @@ type GameMsgType string
 
 const (
 	PlayerPositionType GameMsgType = "playerPosition"
-	PlayerActionType   GameMsgType = "playerAction"
-	CoinActionType     GameMsgType = "coinAction"
-	CoinCollectedType  GameMsgType = "coinCollected"
+	ItemActionType     GameMsgType = "itemAction"
+	ItemCollectedType  GameMsgType = "itemCollected"
 	PlayerChatMsgType  GameMsgType = "playerChatMsg"
 	ErrorType          GameMsgType = "errorChatMsg"
 	AlertType          GameMsgType = "alertMsg"

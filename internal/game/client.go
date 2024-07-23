@@ -66,17 +66,17 @@ func (c *Client) ReadPump(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			zap.S().Debugf("ReadPump playerPosition: %v", position)
+			zap.S().Debugf("ReadPump msg: %v", gameMsg)
 
 			position.ID = c.ID
 			c.Hub.PositionChan <- position
-		case models.CoinActionType:
-			position, err := gameMsgContentSwaper[models.PlayerScore](&gameMsg)
+		case models.ItemActionType:
+			itemAction, err := gameMsgContentSwaper[models.ItemAction](&gameMsg)
 			if err != nil {
 				return err
 			}
-			position.ID = c.ID
-			c.Hub.ScoresChan <- position
+			itemAction.ID = c.ID
+			c.Hub.ActionChan <- itemAction
 
 		case models.PlayerChatMsgType:
 		default:
@@ -96,7 +96,7 @@ func (c *Client) WritePump(ctx context.Context) error {
 		case <-ctx.Done():
 			errors.New(fmt.Sprintf("WritePump for client %s stopped due to context cancellation", c.ID))
 		case msg, ok := <-c.Send:
-			zap.S().Debugf("WritePump by %v msg: %v", c.ID, msg.Content)
+			zap.S().Debugf("WritePump msg: %v", msg)
 			if !ok {
 				errors.New(fmt.Sprintf("failed to send message to client: %v", c.ID))
 				c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
