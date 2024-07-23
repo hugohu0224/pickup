@@ -12,22 +12,22 @@ import (
 var Hm *HubManager
 
 type Hub struct {
-	ID            string
-	ClientManager *ClientManager
-	HubManager    *HubManager
-	StartPosition *models.StartPosition
-	Occupied      sync.Map // for occupied check => map[positionString]*models.Position
-	Obstacles     []*models.Position
-	Coins         sync.Map // map[positionString]*models.Position
-	Positions     sync.Map // for player move validate => map[userId]*models.Position
-	PositionChan  chan *models.PlayerPosition
-	Scores        sync.Map
-	ScoresChan    chan *models.PlayerScore
-	MsgChan       chan *models.ChatMsg
-	roundTimer    int
-	roundDuration int
-	mu            sync.RWMutex
-	obstaclesMu   sync.RWMutex
+	ID             string
+	ClientManager  *ClientManager
+	HubManager     *HubManager
+	StartPosition  *models.StartPosition
+	OccupiedInMap  sync.Map // for occupied check => map[positionString]*models.Position
+	ObstaclesInMap []*models.Position
+	ItemsInMap     sync.Map // map[positionString]*models.CoinItem
+	PositionsInMap sync.Map // for player move validate => map[userId]*models.Position
+	PositionChan   chan *models.PlayerPosition
+	Scores         sync.Map
+	ScoresChan     chan *models.PlayerScore
+	MsgChan        chan *models.ChatMsg
+	roundTimer     int
+	roundDuration  int
+	mu             sync.RWMutex
+	obstaclesMu    sync.RWMutex
 }
 
 func (h *Hub) InitObstacles() {
@@ -38,10 +38,10 @@ func (h *Hub) InitObstacles() {
 		positionString := fmt.Sprintf("%d-%d", x, y)
 
 		// check if occupied
-		if _, occupied := h.Occupied.LoadOrStore(positionString, "obstacle"); !occupied {
+		if _, occupied := h.OccupiedInMap.LoadOrStore(positionString, "obstacle"); !occupied {
 			obstacle := &models.Position{X: x, Y: y}
-			h.Occupied.Store(positionString, obstacle)
-			h.Obstacles = append(h.Obstacles, obstacle)
+			h.OccupiedInMap.Store(positionString, obstacle)
+			h.ObstaclesInMap = append(h.ObstaclesInMap, obstacle)
 		} else {
 			i-- // retry if occupied
 		}
@@ -56,10 +56,10 @@ func (h *Hub) InitCoins() {
 		positionString := fmt.Sprintf("%d-%d", x, y)
 
 		// check if occupied
-		if _, occupied := h.Occupied.Load(positionString); !occupied {
-			//h.Occupied.Store(positionString, "coins") // coin will not occupied
+		if _, occupied := h.OccupiedInMap.Load(positionString); !occupied {
+			//h.OccupiedInMap.Store(positionString, "coins") // coin will not occupied
 			position := &models.Position{X: x, Y: y}
-			h.Coins.Store(positionString, position)
+			h.ItemsInMap.Store(positionString, position)
 		} else {
 			i-- // retry if occupied
 		}
@@ -67,7 +67,7 @@ func (h *Hub) InitCoins() {
 }
 
 func (h *Hub) SendCoinToClient(client *Client) {
-	h.Coins.Range(func(key, value interface{}) bool {
+	h.ItemsInMap.Range(func(key, value interface{}) bool {
 		msg := &models.GameMsg{
 			Type:    "coinPosition",
 			Content: value.(*models.Position),
@@ -80,17 +80,17 @@ func (h *Hub) SendCoinToClient(client *Client) {
 func (h *Hub) UpdateObstacles(newObstacles []*models.Position) {
 	h.obstaclesMu.Lock()
 	defer h.obstaclesMu.Unlock()
-	h.Obstacles = newObstacles
+	h.ObstaclesInMap = newObstacles
 }
 
 func (h *Hub) GetObstacles() []*models.Position {
 	h.obstaclesMu.RLock()
 	defer h.obstaclesMu.RUnlock()
-	return h.Obstacles
+	return h.ObstaclesInMap
 }
 
 func (h *Hub) SendObstaclesToClient(client *Client) {
-	for _, obstacle := range h.Obstacles {
+	for _, obstacle := range h.ObstaclesInMap {
 		msg := &models.GameMsg{
 			Type:    "obstaclePosition",
 			Content: obstacle,
@@ -102,7 +102,7 @@ func (h *Hub) SendObstaclesToClient(client *Client) {
 func (h *Hub) SendAllPositionToClient(client *Client) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	h.Positions.Range(func(key, value interface{}) bool {
+	h.PositionsInMap.Range(func(key, value interface{}) bool {
 		userId, ok := key.(string)
 		if !ok {
 			zap.S().Errorf("SendAllPositionsToClient error, userId type: %T", userId)
@@ -114,7 +114,7 @@ func (h *Hub) SendAllPositionToClient(client *Client) {
 			return true
 		}
 
-		position, ok := value.(models.Position)
+		position, ok := value.(*models.Position)
 		if !ok {
 			zap.S().Errorf("SendAllPositionsToClient error, position type: %T", position)
 			return false
@@ -159,7 +159,7 @@ func (h *Hub) Run() {
 func (h *Hub) handelScoreUpdate(playerScore *models.PlayerScore) {
 	// remove coin
 	positionString := fmt.Sprintf("%d-%d", playerScore.Position.X, playerScore.Position.Y)
-	h.Coins.Delete(positionString)
+	h.ItemsInMap.Delete(positionString)
 	h.broadcastCollectedCoin(playerScore)
 }
 
@@ -175,18 +175,18 @@ func (h *Hub) broadcastCollectedCoin(playerScore *models.PlayerScore) {
 func (h *Hub) handelPositionUpdate(position *models.PlayerPosition) {
 	userId := position.ID
 
-	newPosition := models.Position{
+	newPosition := &models.Position{
 		X: position.X,
 		Y: position.Y,
 	}
 
-	currentPosition, ok := h.Positions.Load(userId)
+	currentPosition, ok := h.PositionsInMap.Load(userId)
 	if !ok {
 		zap.S().Errorf("no current position found for user %s", userId)
 		return
 	}
 	// check move
-	if !IsValidMove(currentPosition.(models.Position), newPosition) {
+	if !IsValidMove(currentPosition.(*models.Position), newPosition) {
 		zap.S().Infof("Invalid move from user %s", userId)
 		h.sendInvalidPositionToClient(userId)
 		return
@@ -194,9 +194,9 @@ func (h *Hub) handelPositionUpdate(position *models.PlayerPosition) {
 
 	// check occupied
 	newPositionString := fmt.Sprintf("%d-%d", newPosition.X, newPosition.Y)
-	occupiedUserId, ok := h.Occupied.Load(newPositionString)
+	occupiedPosition, ok := h.OccupiedInMap.Load(newPositionString)
 	if ok {
-		errMsg := fmt.Sprintf("%v occupied by %v\n", newPositionString, occupiedUserId.(string))
+		errMsg := fmt.Sprintf("%v occupied position %v\n", newPositionString, occupiedPosition.(*models.Position))
 		zap.S().Debug(errMsg)
 		h.sendErrorToClient(userId, errMsg)
 		// still need to send server position to sync front-end position
@@ -205,13 +205,13 @@ func (h *Hub) handelPositionUpdate(position *models.PlayerPosition) {
 	}
 
 	// remove previous position
-	currentPositionString := fmt.Sprintf("%d-%d", currentPosition.(models.Position).X, currentPosition.(models.Position).Y)
-	h.Occupied.Delete(currentPositionString)
-	h.Positions.Delete(userId)
+	currentPositionString := fmt.Sprintf("%d-%d", currentPosition.(*models.Position).X, currentPosition.(*models.Position).Y)
+	h.OccupiedInMap.Delete(currentPositionString)
+	h.PositionsInMap.Delete(userId)
 
 	// save new position
-	h.Positions.Store(userId, newPosition)
-	h.Occupied.Store(newPositionString, userId)
+	h.PositionsInMap.Store(userId, newPosition)
+	h.OccupiedInMap.Store(newPositionString, newPosition)
 
 	// final
 	h.broadcastValidPositionToAllClients(position)
@@ -264,7 +264,7 @@ func (h *Hub) sendAlertToUser(userId string, alertMsg string) {
 }
 
 func (h *Hub) GetPositionByUserId(userId string) *models.PlayerPosition {
-	position, ok := h.Positions.Load(userId)
+	position, ok := h.PositionsInMap.Load(userId)
 	if !ok {
 		zap.S().Errorf("no position found for user %s", userId)
 	}
@@ -272,7 +272,7 @@ func (h *Hub) GetPositionByUserId(userId string) *models.PlayerPosition {
 	playPosition := &models.PlayerPosition{
 		Valid:    false,
 		ID:       userId,
-		Position: models.Position{X: position.(models.Position).X, Y: position.(models.Position).Y},
+		Position: &models.Position{X: position.(*models.Position).X, Y: position.(*models.Position).Y},
 	}
 
 	return playPosition
@@ -290,17 +290,17 @@ func (h *Hub) InitStartPosition(client *Client) {
 		y := rand.Intn(tryScope)
 		positionString := fmt.Sprintf("%d-%d", x, y)
 
-		// try to store Occupied
-		if _, occupied := h.Occupied.Load(positionString); !occupied {
+		// try to store OccupiedInMap
+		if _, occupied := h.OccupiedInMap.Load(positionString); !occupied {
 			startPosition := &models.PlayerPosition{
 				Valid: true,
 				ID:    client.ID,
-				Position: models.Position{
+				Position: &models.Position{
 					X: x,
 					Y: y,
 				},
 			}
-			h.Positions.Store(client.ID, startPosition.Position)
+			h.PositionsInMap.Store(client.ID, startPosition.Position)
 			h.PositionChan <- startPosition
 			zap.S().Infof("start position set for client %s at (%d, %d) after %d attempts", client.ID, x, y, attempts+1)
 			return
@@ -310,7 +310,7 @@ func (h *Hub) InitStartPosition(client *Client) {
 	zap.S().Errorf("failed to find start position for client %s after %d attempts", client.ID, maxAttempts)
 }
 
-func IsValidMove(currentPosition models.Position, newPosition models.Position) bool {
+func IsValidMove(currentPosition *models.Position, newPosition *models.Position) bool {
 	// check grid
 	if newPosition.X < 0 || newPosition.X >= global.Dv.GetInt("GRIDSIZE") ||
 		newPosition.Y < 0 || newPosition.Y >= global.Dv.GetInt("GRIDSIZE") {
@@ -338,8 +338,8 @@ func (h *Hub) CleanupClient(client *Client) {
 	userId := client.ID
 
 	position := h.GetPositionByUserId(userId)
-	h.Occupied.Delete(fmt.Sprintf("%d-%d", position.X, position.Y))
-	h.Positions.Delete(userId)
+	h.OccupiedInMap.Delete(fmt.Sprintf("%d-%d", position.X, position.Y))
+	h.PositionsInMap.Delete(userId)
 	h.Scores.Delete(userId)
 	h.ClientManager.RemoveClient(client)
 	client.Conn.Close()
@@ -369,18 +369,18 @@ func (hm *HubManager) GetHubById(id string) *Hub {
 
 func NewHub(hm *HubManager, id string) *Hub {
 	return &Hub{
-		ID:            id,
-		ClientManager: NewClientManager(),
-		HubManager:    hm,
-		Occupied:      sync.Map{},
-		Positions:     sync.Map{},
-		PositionChan:  make(chan *models.PlayerPosition),
-		Scores:        sync.Map{},
-		ScoresChan:    make(chan *models.PlayerScore),
-		MsgChan:       make(chan *models.ChatMsg),
-		roundTimer:    0,
-		roundDuration: 0,
-		mu:            sync.RWMutex{},
+		ID:             id,
+		ClientManager:  NewClientManager(),
+		HubManager:     hm,
+		OccupiedInMap:  sync.Map{},
+		PositionsInMap: sync.Map{},
+		PositionChan:   make(chan *models.PlayerPosition),
+		Scores:         sync.Map{},
+		ScoresChan:     make(chan *models.PlayerScore),
+		MsgChan:        make(chan *models.ChatMsg),
+		roundTimer:     0,
+		roundDuration:  0,
+		mu:             sync.RWMutex{},
 	}
 }
 

@@ -6,15 +6,28 @@ type Position struct {
 }
 
 type PlayerPosition struct {
-	Valid    bool   `json:"valid"`
-	ID       string `json:"id"`
-	Position `json:"position"`
+	Valid     bool   `json:"valid"`
+	ID        string `json:"id"`
+	*Position `json:"position"`
 }
 
+type CoinItem struct {
+	ItemType string `json:"item_type"`
+	Value    string `json:"value"`
+}
+
+type ItemType string
+
+const (
+	BoxCoin ItemType = "boxCoin"
+	OneCoin ItemType = "oneCoin"
+)
+
 type PlayerScore struct {
-	Valid    bool   `json:"valid"`
-	ID       string `json:"id"`
-	Position `json:"position"`
+	Valid     bool   `json:"valid"`
+	ID        string `json:"id"`
+	*Position `json:"position"`
+	*CoinItem `json:"coin_item"`
 }
 
 type ChatMsg struct {
