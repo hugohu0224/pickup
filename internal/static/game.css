@@ -129,6 +129,10 @@ body {
     content: '💰️';
 }
 
+.cell.item-diamond::before {
+    content: '💎';
+}
+
 .cell.player-on-item .item::before {
     opacity: 0.5;
 }

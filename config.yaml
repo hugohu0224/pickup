@@ -5,6 +5,7 @@ default: &default
   COOKIE_SECURE: false
   OBSNUMBER: 15
   COINNUMBER: 5
+  DIAMOND: 1
 
 dev:
   <<: *default

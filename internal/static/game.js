@@ -170,7 +170,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 });
                 socket.send(message);
             } else {
-                console.log("No coin at current position to collect");
+                console.log("No item at current position to collect");
             }
         }
     }
@@ -374,19 +374,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     function handleItemCollected(data) {
         if (data.valid) {
             removeItem(data);
+
+            console.log(JSON.stringify(data));
+
             switch (data.item.type) {
                 case 'coin':
+                    break
+                case 'diamond':
                     break
             }
         } else {
             notifyUser("Failed to collect coin: " + data.reason);
-        }
-    }
-
-    function updateScore(newScore) {
-        const scoreElement = document.getElementById('score');
-        if (scoreElement) {
-            scoreElement.textContent = "Score: " + newScore;
         }
     }
 
