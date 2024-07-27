@@ -4,6 +4,15 @@
     --primary-color: rgba(0, 115, 177, 0.55);
     --secondary-color: #f5f7fa;
     --border-color: #e1e4e8;
+    --player-list-bg: #f0f4f8;
+    --current-player-bg: #e6f2ff;
+    --title-color: rgb(0, 85, 130);
+}
+
+#game-info h2{
+    font-size: 28px;
+    margin-bottom: 10px;
+    color: var(--title-color);
 }
 
 body {
@@ -145,4 +154,49 @@ body {
     0% { transform: scale(1); }
     50% { transform: scale(1.2); }
     100% { transform: scale(1); }
+}
+
+#player-list {
+    background-color: var(--player-list-bg);
+    border-radius: 8px;
+    padding: 10px;
+    max-width: 300px;
+    margin: 20px auto;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.player-item {
+    padding: 8px 12px;
+    margin: 5px 0;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: background-color 0.2s ease;
+}
+
+.player-item.current-player {
+    background-color: var(--current-player-bg);
+}
+
+.current-player {
+    background-color: var(--primary-color);
+}
+
+#game-info {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+#game-info > * {
+    color: var(--title-color);
+    font-weight: bold;
+    font-size: 20px;
+    margin: 10px 0;
+}
+
+#game-info h2 {
+    font-size: 32px;
+}
+
+#time-left {
+    font-weight: normal;
 }

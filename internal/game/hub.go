@@ -17,10 +17,10 @@ type Hub struct {
 	HubManager     *HubManager
 	OccupiedInMap  sync.Map // map[positionString]*models.Position (for occupied check)
 	ObstaclesInMap []*models.Position
-	ItemsInMap     sync.Map // map[positionString]*models.ItemAction (for game Actions)
-	UsersInMap     sync.Map // map[userId]*models.Position (for player move validate)
+	ItemsInMap     sync.Map // map[positionString]*models.ItemAction (for game actions)
+	UsersInMap     sync.Map // map[userIdString]*models.Position (for player move validate)
 	PositionChan   chan *models.PlayerPosition
-	Scores         sync.Map
+	Scores         sync.Map // map[userIdString]int (player score storage)
 	ActionChan     chan *models.ItemAction
 	MsgChan        chan *models.ChatMsg
 	mu             sync.RWMutex
@@ -188,17 +188,49 @@ func (h *Hub) handleItemAction(itemAction *models.ItemAction) error {
 	if err != nil {
 		return fmt.Errorf("failed to get item in map: %w", err)
 	}
+
 	switch itemInMap.Item.Type {
-	case "coin":
+	case "coin", "diamond":
 		h.ItemsInMap.Delete(positionString)
+		newScore := h.updateScore(itemAction.ID, itemInMap.Item.Value)
 		h.broadcastCollectedItem(itemInMap)
-	case "diamond":
-		h.ItemsInMap.Delete(positionString)
-		h.broadcastCollectedItem(itemInMap)
+		h.broadcastSingleScore(itemAction.ID, newScore)
 	default:
 		return fmt.Errorf("unknown item type: %s", itemInMap.Item.Type)
 	}
 	return nil
+}
+
+func (h *Hub) updateScore(userID string, value int) int {
+	currentScore, _ := h.Scores.LoadOrStore(userID, 0)
+	newScore := currentScore.(int) + value
+	h.Scores.Store(userID, newScore)
+	return newScore
+}
+
+func (h *Hub) broadcastSingleScore(userId string, score int) {
+	msg := &models.GameMsg{
+		Type: "score",
+		Content: &models.ScoreUpdate{
+			ID:    userId,
+			Score: score,
+		},
+	}
+	h.ClientManager.BroadcastAll(msg)
+}
+
+func (h *Hub) SendAllScoresToClient(client *Client) {
+	h.Scores.Range(func(userId, score interface{}) bool {
+		msg := &models.GameMsg{
+			Type: "score",
+			Content: &models.ScoreUpdate{
+				ID:    userId.(string),
+				Score: score.(int),
+			},
+		}
+		client.Send <- msg
+		return true
+	})
 }
 
 func (h *Hub) broadcastCollectedItem(itemAction *models.ItemAction) {
@@ -223,8 +255,8 @@ func (h *Hub) handlePositionUpdate(position *models.PlayerPosition) error {
 		return fmt.Errorf("no current position found for user %s", userId)
 	}
 	// check move
-	if !IsValidMove(currentPosition.(*models.Position), newPosition) {
-		h.sendInvalidPositionToClient(userId)
+	if reason, ok := IsValidMove(currentPosition.(*models.Position), newPosition); !ok {
+		h.sendInvalidPositionToClient(reason, userId)
 		return fmt.Errorf("invalid move from user %s", userId)
 	}
 
@@ -236,7 +268,7 @@ func (h *Hub) handlePositionUpdate(position *models.PlayerPosition) error {
 		zap.S().Debug(errMsg)
 		h.sendErrorToClient(userId, errMsg)
 		// still need to send server position to sync front-end position
-		h.sendInvalidPositionToClient(userId)
+		h.sendInvalidPositionToClient(errMsg, userId)
 		return fmt.Errorf(errMsg)
 	}
 
@@ -263,15 +295,16 @@ func (h *Hub) broadcastValidPositionToAllClients(position *models.PlayerPosition
 	h.ClientManager.BroadcastAll(msg)
 }
 
-func (h *Hub) sendInvalidPositionToClient(userId string) {
+func (h *Hub) sendInvalidPositionToClient(reason string, userId string) {
 	// get position
-	currentPosition, err := h.GetPositionByUserId(userId)
+	currentPosition, err := h.GetPlayerPositionByUserId(userId)
 	if err != nil {
 		zap.S().Errorf("failed to get the current position for user %s, due to:%v", userId, err)
 	}
 
 	// set to invalid for front-end check
 	currentPosition.Valid = false
+	currentPosition.Reason = reason
 	msg := &models.GameMsg{
 		Type:    models.PlayerPositionType,
 		Content: currentPosition,
@@ -303,7 +336,7 @@ func (h *Hub) sendAlertToUser(userId string, alertMsg string) {
 	h.ClientManager.SendToClient(userId, msg)
 }
 
-func (h *Hub) GetPositionByUserId(userId string) (*models.PlayerPosition, error) {
+func (h *Hub) GetPlayerPositionByUserId(userId string) (*models.PlayerPosition, error) {
 	position, ok := h.UsersInMap.Load(userId)
 	if !ok {
 		return nil, fmt.Errorf("no position found for user %s", userId)
@@ -350,20 +383,20 @@ func (h *Hub) InitStartPosition(client *Client) {
 	zap.S().Errorf("failed to find start position for client %s after %d attempts", client.ID, maxAttempts)
 }
 
-func IsValidMove(currentPosition *models.Position, newPosition *models.Position) bool {
+func IsValidMove(currentPosition *models.Position, newPosition *models.Position) (reason string, ok bool) {
 	// check grid
 	if newPosition.X < 0 || newPosition.X >= global.Dv.GetInt("GRIDSIZE") ||
 		newPosition.Y < 0 || newPosition.Y >= global.Dv.GetInt("GRIDSIZE") {
-		return false
+		return "The move is out of grid", false
 	}
 
 	// check if move only 1 step
 	xDiff := abs(newPosition.X - currentPosition.X)
 	yDiff := abs(newPosition.Y - currentPosition.Y)
 	if (xDiff + yDiff) > 1 {
-		return false
+		return "The move is over 1 temp (you can move only 1 step)", false
 	}
-	return true
+	return "", true
 }
 
 func abs(n int) int {
@@ -377,7 +410,7 @@ func abs(n int) int {
 func (h *Hub) CleanupClient(client *Client) {
 	userId := client.ID
 
-	position, err := h.GetPositionByUserId(userId)
+	position, err := h.GetPlayerPositionByUserId(userId)
 	if err != nil {
 		zap.S().Errorf("failed to get the current position for user %s, due to:%v", userId, err.Error())
 	}

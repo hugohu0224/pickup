@@ -17,6 +17,11 @@ func InitRouters() *gin.Engine {
 		})
 	})
 
+	// default page
+	r.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusFound, "/v1/auth/login")
+	})
+
 	ApiGroup := r.Group("/v1")
 
 	routers.InitGameRouter(ApiGroup)

@@ -8,6 +8,7 @@ type Position struct {
 type PlayerPosition struct {
 	Valid     bool   `json:"valid"`
 	ID        string `json:"id"`
+	Reason    string `json:"reason,omitempty"`
 	*Position `json:"position"`
 }
 
@@ -23,12 +24,12 @@ type ItemAction struct {
 	*Position `json:"position"`
 }
 
-type ItemType string
+type ScoreUpdate struct {
+	ID    string `json:"id"`
+	Score int    `json:"score"`
+}
 
-const (
-	BoxCoin ItemType = "boxCoin"
-	OneCoin ItemType = "oneCoin"
-)
+type ItemType string
 
 type ChatMsg struct {
 	ID      string `json:"id"`
@@ -62,7 +63,7 @@ const (
 	ItemActionType     GameMsgType = "itemAction"
 	ItemCollectedType  GameMsgType = "itemCollected"
 	PlayerChatMsgType  GameMsgType = "playerChatMsg"
-	ErrorType          GameMsgType = "errorChatMsg"
+	ErrorType          GameMsgType = "errorMsg"
 	AlertType          GameMsgType = "alertMsg"
 )
 

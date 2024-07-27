@@ -1,14 +1,17 @@
 document.addEventListener('DOMContentLoaded', async () => {
     const gameBoard = document.getElementById('game-board');
     const playerList = document.getElementById('player-list');
+    const timerDisplay = document.getElementById('time-left');
     let gridSize = 15;
     let socket;
     let playerPosition = {x: 0, y: 0};
     let lastConfirmedPosition = {x: 0, y: 0};
     let playerId;
     let players = {};
+    let playerScores = {};
     let obstacles = [];
     let items = [];
+    let isGameInitialized = false;
 
     const itemHandlers = {
         coin: () => console.log('Coin collected'),
@@ -28,8 +31,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         itemPosition: addItem,
         itemCollected: handleItemCollected,
         gameState: updateGameState,
-        playerInfo: (content) => { playerId = content.id; },
-        error: (content) => notifyUser("Error: " + content.message)
+        errorMsg: (content) => notifyUser("Error: " + content.error),
+        score: updateSingleScore
     };
 
     try {
@@ -42,8 +45,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         playerId = getUserIdFromCookie();
         if (!playerId) throw new Error('Player ID not found in cookie');
-
-        initGame();
     } catch (error) {
         console.error('Error initializing game:', error);
     }
@@ -101,7 +102,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function setupWebSocket() {
-        socket.onopen = initGame;
+        socket.onopen = () => {
+            console.log("WebSocket connected");
+            initGame();
+        };
         socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             const handler = messageHandlers[data.type];
@@ -113,6 +117,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function initGame() {
+        if (isGameInitialized) return;
+        isGameInitialized = true;
+
         createGameBoard();
         lastConfirmedPosition = {...playerPosition};
         document.addEventListener('keydown', handleKeyPress);
@@ -187,7 +194,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         cell.classList.toggle('player-on-coin', cell.classList.contains('coin'));
 
         players[playerData.id] = playerData.position;
-        updatePlayerList(playerData);
+        updatePlayerInList(playerData.id);
     }
 
     function sendMoveRequest(direction) {
@@ -249,24 +256,33 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.log(message);
     }
 
-    function updatePlayerList(player) {
-        let playerElement = document.getElementById(`player-${player.id}`);
+    function updatePlayerInList(userId) {
+        let playerElement = document.getElementById(`player-${userId}`);
         if (!playerElement) {
             playerElement = document.createElement('div');
-            playerElement.id = `player-${player.id}`;
+            playerElement.id = `player-${userId}`;
+            playerElement.className = 'player-item';
             playerList.appendChild(playerElement);
         }
-        playerElement.textContent = `Player ${player.id}: (${player.position.x}, ${player.position.y})${player.id === playerId ? ' (You)' : ''}`;
+        const score = playerScores[userId] || 0;
+        const isCurrentPlayer = userId === playerId;
+
+        playerElement.className = `player-item${isCurrentPlayer ? ' current-player' : ''}`;
+        playerElement.textContent = `Player ${userId}: Score ${score}${isCurrentPlayer ? ' (You)' : ''}`;
     }
 
     function handleItemCollected(data) {
         if (data.valid) {
             removeItem(data);
-            console.log(JSON.stringify(data));
             const handler = itemHandlers[data.item.type];
             if (handler) handler();
         } else {
             notifyUser("Failed to collect item: " + data.reason);
         }
+    }
+
+    function updateSingleScore(scoreUpdate) {
+        playerScores[scoreUpdate.id] = scoreUpdate.score;
+        updatePlayerInList(scoreUpdate.id);
     }
 });

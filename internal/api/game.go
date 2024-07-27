@@ -67,6 +67,8 @@ func WebsocketEndpoint(c *gin.Context) {
 	hub.SendObstaclesToClient(client)
 	hub.SendAllItemToClient(client)
 	hub.SendAllPositionToClient(client)
+	hub.SendAllScoresToClient(client)
+
 	serveWs(client)
 }
 
