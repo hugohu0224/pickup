@@ -11,21 +11,23 @@ import (
 )
 
 type Client struct {
-	ID   string
-	Hub  *Hub
-	Conn *websocket.Conn
-	Send chan *models.GameMsg
-	Done chan struct{}
-	mu   sync.Mutex
+	ID       string
+	Hub      *Hub
+	Conn     *websocket.Conn
+	Send     chan *models.GameMsg
+	Done     chan struct{}
+	IsActive bool
+	mu       sync.Mutex
 }
 
 func NewClient(id string, hub *Hub, conn *websocket.Conn) *Client {
 	return &Client{
-		ID:   id,
-		Hub:  hub,
-		Conn: conn,
-		Send: make(chan *models.GameMsg, 128),
-		Done: make(chan struct{}),
+		ID:       id,
+		Hub:      hub,
+		Conn:     conn,
+		Send:     make(chan *models.GameMsg, 128),
+		Done:     make(chan struct{}),
+		IsActive: false,
 	}
 }
 
@@ -63,6 +65,10 @@ func (c *Client) ReadPump(ctx context.Context) error {
 }
 
 func (c *Client) handleGameMsg(gameMsg *models.GameMsg) error {
+	if !c.IsActive && !c.Hub.CurrentRound.IsWaiting {
+		return fmt.Errorf("client is not active in the current round")
+	}
+
 	switch gameMsg.Type {
 	case models.PlayerPositionType:
 		return c.handlePlayerPosition(gameMsg)

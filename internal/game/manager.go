@@ -22,18 +22,26 @@ func (hm *HubManager) GetHubById(id string) *Hub {
 }
 
 func NewHub(hm *HubManager, id string) *Hub {
-	return &Hub{
-		ID:            id,
-		ClientManager: NewClientManager(),
-		HubManager:    hm,
-		OccupiedInMap: sync.Map{},
-		UsersInMap:    sync.Map{},
-		PositionChan:  make(chan *models.PlayerPosition),
-		Scores:        sync.Map{},
-		ActionChan:    make(chan *models.ItemAction),
-		MsgChan:       make(chan *models.ChatMsg),
-		mu:            sync.RWMutex{},
+	hub := &Hub{
+		ID:             id,
+		ClientManager:  NewClientManager(),
+		HubManager:     hm,
+		OccupiedInMap:  sync.Map{},
+		ObstaclesInMap: nil,
+		ItemsInMap:     sync.Map{},
+		UsersInMap:     sync.Map{},
+		PositionChan:   make(chan *models.PlayerPosition),
+		Scores:         sync.Map{},
+		ActionChan:     make(chan *models.ItemAction),
+		MsgChan:        make(chan *models.ChatMsg),
+		CurrentRound:   nil,
+		mu:             sync.RWMutex{},
+		obstaclesMu:    sync.RWMutex{},
 	}
+
+	hub.CurrentRound = hub.NewGameRound()
+
+	return hub
 }
 
 func (hm *HubManager) RegisterHub(h *Hub) {

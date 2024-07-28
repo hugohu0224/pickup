@@ -32,7 +32,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         itemCollected: handleItemCollected,
         gameState: updateGameState,
         errorMsg: (content) => notifyUser("Error: " + content.error),
-        score: updateSingleScore
+        score: updateSingleScore,
+        countdown: updateCountdown,
+        roundState: handleRoundState
     };
 
     try {
@@ -284,5 +286,151 @@ document.addEventListener('DOMContentLoaded', async () => {
     function updateSingleScore(scoreUpdate) {
         playerScores[scoreUpdate.id] = scoreUpdate.score;
         updatePlayerInList(scoreUpdate.id);
+    }
+
+    function updateCountdown(countdownUpdate) {
+        const remainingTime = countdownUpdate.remainingTime;
+        const currentState = countdownUpdate.currentState;
+
+        const timerDisplay = document.getElementById('time-left');
+        timerDisplay.textContent = remainingTime;
+
+        const gameInfo = document.getElementById('game-info');
+        const stateDisplay = gameInfo.querySelector('.game-state');
+        if (!stateDisplay) {
+            const stateElement = document.createElement('div');
+            stateElement.className = 'game-state';
+            gameInfo.appendChild(stateElement);
+        }
+        stateDisplay.textContent = currentState === 'waiting' ? 'Waiting for next round' : 'Game in progress';
+
+        const gameMessages = document.getElementById('game-messages');
+        const message = document.createElement('p');
+        message.textContent = `${currentState === 'waiting' ? 'Waiting' : 'Playing'} - ${remainingTime}s left`;
+        gameMessages.appendChild(message);
+
+        while (gameMessages.children.length > 5) {
+            gameMessages.removeChild(gameMessages.firstChild);
+        }
+
+        if (remainingTime <= 0) {
+            if (currentState === 'waiting') {
+                console.log('New round is about to start!');
+
+            } else {
+                console.log('Current round is ending!');
+            }
+        }
+    }
+
+    function handleRoundState(roundState) {
+        const state = roundState.state;
+        const currentTime = new Date(roundState.currentTime);
+        const endTime = new Date(roundState.endTime);
+
+        console.log(`Round state changed to: ${state}`);
+
+        const gameInfo = document.getElementById('game-info');
+        const stateDisplay = gameInfo.querySelector('.game-state');
+        if (!stateDisplay) {
+            const stateElement = document.createElement('div');
+            stateElement.className = 'game-state';
+            gameInfo.appendChild(stateElement);
+        }
+        stateDisplay.textContent = `Game ${state}`;
+
+        const gameMessages = document.getElementById('game-messages');
+        const message = document.createElement('p');
+        message.textContent = `Round ${state} - Ends at ${endTime.toLocaleTimeString()}`;
+        gameMessages.appendChild(message);
+
+        while (gameMessages.children.length > 5) {
+            gameMessages.removeChild(gameMessages.firstChild);
+        }
+
+        if (state === 'waiting') {
+            resetGameData();
+        } else if (state === 'playing') {
+            resetGameData();
+            startNewRound();
+        } else if (state === 'ended') {
+            endCurrentRound();
+        }
+    }
+
+    function handleRoundState(roundState) {
+        const state = roundState.state;
+        const currentTime = new Date(roundState.currentTime);
+        const endTime = new Date(roundState.endTime);
+
+        console.log(`Round state changed to: ${state}`);
+
+        const gameInfo = document.getElementById('game-info');
+        const stateDisplay = gameInfo.querySelector('.game-state');
+        if (!stateDisplay) {
+            const stateElement = document.createElement('div');
+            stateElement.className = 'game-state';
+            gameInfo.appendChild(stateElement);
+        }
+        stateDisplay.textContent = `Game ${state}`;
+
+        const gameMessages = document.getElementById('game-messages');
+        const message = document.createElement('p');
+        message.textContent = `Round ${state} - Ends at ${endTime.toLocaleTimeString()}`;
+        gameMessages.appendChild(message);
+
+        while (gameMessages.children.length > 5) {
+            gameMessages.removeChild(gameMessages.firstChild);
+        }
+
+        if (state === 'waiting') {
+            resetGameData();
+        } else if (state === 'playing') {
+        } else if (state === 'ended') {
+        }
+    }
+
+    function resetGameData() {
+        playerPosition = {x: 0, y: 0};
+        lastConfirmedPosition = {x: 0, y: 0};
+        players = {};
+        playerScores = {};
+        obstacles = [];
+        items = [];
+
+
+        const gameBoard = document.getElementById('game-board');
+        const cells = gameBoard.getElementsByClassName('cell');
+        Array.from(cells).forEach(cell => {
+            cell.classList.remove('player', 'current-player', 'other-player', 'obstacle', 'item', 'item-coin', 'item-diamond', 'player-on-item');
+            cell.removeAttribute('data-player-id');
+        });
+
+        const playerList = document.getElementById('player-list');
+        playerList.innerHTML = '';
+
+
+        const gameMessages = document.getElementById('game-messages');
+        gameMessages.innerHTML = '';
+
+        const timerDisplay = document.getElementById('time-left');
+        if (timerDisplay) {
+            timerDisplay.textContent = '';
+        }
+
+        const gameInfo = document.getElementById('game-info');
+        const stateDisplay = gameInfo.querySelector('.game-state');
+        if (stateDisplay) {
+            stateDisplay.textContent = '';
+        }
+
+        const modal = document.getElementById('game-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+
+        document.removeEventListener('keydown', handleKeyPress);
+
+        console.log('Game data and DOM elements reset');
     }
 });

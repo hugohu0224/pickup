@@ -60,14 +60,10 @@ func WebsocketEndpoint(c *gin.Context) {
 
 	// new Client
 	client := game.NewClient(userId, hub, conn)
+	hub.RegisterClient(client)
 
-	// init client info to hub
-	hub.ClientManager.RegisterClient(client)
-	hub.InitStartPosition(client)
-	hub.SendObstaclesToClient(client)
-	hub.SendAllItemToClient(client)
-	hub.SendAllPositionToClient(client)
-	hub.SendAllScoresToClient(client)
+	// init game state
+	hub.SendAllGameRoundStateToClient(client)
 
 	serveWs(client)
 }
