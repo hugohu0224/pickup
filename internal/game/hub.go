@@ -17,8 +17,8 @@ type Hub struct {
 	ObstaclesInMap []*models.Position
 	ItemsInMap     sync.Map // map[positionString]*models.ItemAction (for game actions)
 	UsersInMap     sync.Map // map[userIdString]*models.Position (for player move validate)
-	PositionChan   chan *models.PlayerPosition
 	Scores         sync.Map // map[userIdString]int (player score storage)
+	PositionChan   chan *models.PlayerPosition
 	ActionChan     chan *models.ItemAction
 	MsgChan        chan *models.ChatMsg
 	CurrentRound   *GameRound
@@ -26,11 +26,32 @@ type Hub struct {
 	obstaclesMu    sync.RWMutex
 }
 
+func (h *Hub) RegisterClient(client *Client) bool {
+	if oldClient, exists := h.ClientManager.GetClientByID(client.ID); exists {
+		// sync client game state
+		client.IsActive = oldClient.IsActive
+
+		// change to new conn
+		h.ClientManager.mu.Lock()
+		h.ClientManager.clientsById[oldClient.ID] = client
+		h.ClientManager.clients[client] = true
+		h.ClientManager.mu.Unlock()
+
+		// no register
+		zap.S().Debug("Client exists", zap.String("client", client.ID))
+		return false
+	} else {
+		// register
+		h.ClientManager.RegisterClient(client)
+		zap.S().Debug("Client register", zap.String("client", client.ID))
+		return true
+	}
+}
+
 func (h *Hub) SendAllGameRoundStateToClient(client *Client) {
-	client.Hub.InitStartPosition(client)
 	client.Hub.SendObstaclesToClient(client)
 	client.Hub.SendAllItemToClient(client)
-	client.Hub.SendAllPositionToClient(client)
+	client.Hub.SendAllPlayerPositionToClient(client)
 	client.Hub.SendAllScoresToClient(client)
 }
 
@@ -55,7 +76,7 @@ func (h *Hub) SendObstaclesToClient(client *Client) {
 	}
 }
 
-func (h *Hub) SendAllPositionToClient(client *Client) {
+func (h *Hub) SendAllPlayerPositionToClient(client *Client) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	h.UsersInMap.Range(func(key, value interface{}) bool {

@@ -8,24 +8,22 @@ import (
 )
 
 type GameRound struct {
-	Hub           *Hub
-	IsWaiting     bool
-	ActivePlayers map[string]*Client
-	mu            sync.RWMutex
+	Hub   *Hub
+	State string // "waiting", "cleanup", "preparing", "playing", "ended"
+	Mu    sync.RWMutex
 }
 
 func (h *Hub) NewGameRound() *GameRound {
 	return &GameRound{
-		Hub:           h,
-		IsWaiting:     true,
-		ActivePlayers: make(map[string]*Client),
+		Hub:   h,
+		State: "waiting",
 	}
 }
 
 func (h *Hub) ManageGameRounds() {
 	h.initializeGameState()
 
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 
 	for {
@@ -40,10 +38,17 @@ func (h *Hub) initializeGameState() {
 	now := time.Now()
 	second := now.Second()
 
-	if second < 30 {
+	switch {
+	case second < 5:
 		h.StartWaitingPeriod()
-	} else {
+	case second < 10:
+		h.CleanUpPeriod()
+	case second < 15:
+		h.StartPreparePeriod()
+	case second < 59:
 		h.StartGameRound()
+	default:
+		h.EndGameRound()
 	}
 
 	h.BroadcastCountdown()
@@ -53,11 +58,16 @@ func (h *Hub) updateGameState() {
 	now := time.Now()
 	second := now.Second()
 
-	if second == 0 {
+	switch {
+	case second == 0 && h.CurrentRound.State != "waiting":
 		h.StartWaitingPeriod()
-	} else if second == 30 {
+	case second == 5 && h.CurrentRound.State != "cleanup":
+		h.CleanUpPeriod()
+	case second == 10 && h.CurrentRound.State != "preparing":
+		h.StartPreparePeriod()
+	case second == 15 && h.CurrentRound.State != "playing":
 		h.StartGameRound()
-	} else if second == 59 {
+	case second == 59 && h.CurrentRound.State != "ended":
 		h.EndGameRound()
 	}
 
@@ -65,70 +75,94 @@ func (h *Hub) updateGameState() {
 }
 
 func (h *Hub) StartWaitingPeriod() {
-	h.CurrentRound.mu.Lock()
-	defer h.CurrentRound.mu.Unlock()
+	h.CurrentRound.Mu.Lock()
+	defer h.CurrentRound.Mu.Unlock()
 
-	if !h.CurrentRound.IsWaiting {
-		h.CurrentRound.IsWaiting = true
+	if h.CurrentRound.State != "waiting" {
+		h.CurrentRound.State = "waiting"
 		zap.S().Infof("hub: %v round is waiting", h.ID)
 		h.BroadcastRoundState("waiting")
 	}
 }
 
+func (h *Hub) CleanUpPeriod() {
+	h.CurrentRound.Mu.Lock()
+	defer h.CurrentRound.Mu.Unlock()
+	if h.CurrentRound.State != "cleanup" {
+		h.CurrentRound.State = "cleanup"
+		h.ClearPreviousRoundData()
+		h.BroadcastRoundState("cleanup")
+		zap.S().Infof("hub: %v round cleanup finished", h.ID)
+	}
+}
+
+func (h *Hub) StartPreparePeriod() {
+	h.CurrentRound.Mu.Lock()
+	defer h.CurrentRound.Mu.Unlock()
+
+	if h.CurrentRound.State != "preparing" {
+		h.CurrentRound.State = "preparing"
+		zap.S().Infof("hub: %v round preparing", h.ID)
+		h.InitializeRoundState()
+		h.BroadcastRoundState("preparing")
+	}
+}
+
+func (h *Hub) InitializeRoundState() {
+	zap.S().Infof("hub: %v initializing round started", h.ID)
+
+	h.ClearPreviousRoundData()
+	h.InitAllItems()
+
+	for client, _ := range h.ClientManager.GetClients() {
+		client.Hub.InitStartPosition(client)
+		client.IsActive = true
+	}
+	for client, _ := range h.ClientManager.GetClients() {
+		h.SendAllGameRoundStateToClient(client)
+	}
+
+	zap.S().Infof("hub: %v initializing round completed", h.ID)
+}
+
 func (h *Hub) StartGameRound() {
-	h.CurrentRound.mu.Lock()
-	defer h.CurrentRound.mu.Unlock()
+	h.CurrentRound.Mu.Lock()
+	defer h.CurrentRound.Mu.Unlock()
 
-	if h.CurrentRound.IsWaiting {
-		h.CurrentRound.IsWaiting = false
+	if h.CurrentRound.State != "playing" {
+		h.CurrentRound.State = "playing"
 		zap.S().Infof("hub: %v round is starting", h.ID)
-
-		go func() {
-			h.InitializeRound()
-			h.BroadcastRoundState("playing")
-			zap.S().Infof("hub: %v round initialization completed", h.ID)
-		}()
+		h.BroadcastRoundState("playing")
 	}
 }
 
 func (h *Hub) EndGameRound() {
-	h.CurrentRound.mu.Lock()
-	defer h.CurrentRound.mu.Unlock()
+	h.CurrentRound.Mu.Lock()
+	defer h.CurrentRound.Mu.Unlock()
 
-	h.ClearPreviousRoundData()
-
-	for _, client := range h.CurrentRound.ActivePlayers {
-		client.IsActive = false
+	if h.CurrentRound.State != "ended" {
+		h.CurrentRound.State = "ended"
+		for client, _ := range h.ClientManager.GetClients() {
+			client.IsActive = false
+		}
+		h.BroadcastRoundState("ended")
 	}
-	h.CurrentRound.ActivePlayers = make(map[string]*Client)
-
-	h.BroadcastRoundState("ended")
-}
-
-// InitializeRound 初始化回合
-func (h *Hub) InitializeRound() {
-	h.ClearPreviousRoundData()
-	h.InitAllItems()
-
-	for _, client := range h.CurrentRound.ActivePlayers {
-		h.SendAllGameRoundStateToClient(client)
-	}
-}
-
-func (h *Hub) ClearPreviousRoundData() {
-	h.OccupiedInMap = sync.Map{}
-	h.ObstaclesInMap = make([]*models.Position, 0)
-	h.ItemsInMap = sync.Map{}
-	h.UsersInMap = sync.Map{}
-	h.Scores = sync.Map{}
 }
 
 func (h *Hub) BroadcastRoundState(state string) {
 	now := time.Now()
 	var endTime time.Time
-	if state == "waiting" {
-		endTime = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 30, 0, now.Location())
-	} else {
+
+	switch state {
+	case "waiting":
+		endTime = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 5, 0, now.Location())
+	case "cleanup":
+		endTime = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 10, 0, now.Location())
+	case "preparing":
+		endTime = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 15, 0, now.Location())
+	case "playing":
+		endTime = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 59, 0, now.Location())
+	case "ended":
 		endTime = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute()+1, 0, 0, now.Location())
 	}
 
@@ -143,74 +177,52 @@ func (h *Hub) BroadcastRoundState(state string) {
 	h.ClientManager.BroadcastAll(msg)
 }
 
+func (h *Hub) ClearPreviousRoundData() {
+	h.OccupiedInMap = sync.Map{}
+	h.ObstaclesInMap = make([]*models.Position, 0)
+	h.ItemsInMap = sync.Map{}
+	h.UsersInMap = sync.Map{}
+	h.Scores = sync.Map{}
+}
+
 func (h *Hub) BroadcastCountdown() {
 	now := time.Now()
+	second := now.Second()
 	var target time.Time
-	if h.CurrentRound.IsWaiting {
-		target = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 30, 0, now.Location())
-	} else {
+	var currentState string
+
+	switch {
+	case second < 5:
+		target = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 5, 0, now.Location())
+		currentState = "waiting"
+	case second < 10:
+		target = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 10, 0, now.Location())
+		currentState = "cleanup"
+	case second < 15:
+		target = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 15, 0, now.Location())
+		currentState = "preparing"
+	case second < 59:
+		target = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 59, 0, now.Location())
+		currentState = "playing"
+	default:
 		target = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute()+1, 0, 0, now.Location())
+		currentState = "ended"
 	}
 
 	remaining := target.Sub(now)
-	if remaining <= 10*time.Second && remaining > 0 {
+	stateRemainingTime := int(remaining.Seconds()) % 60
 
-		currentState := "waiting"
-		if !h.CurrentRound.IsWaiting {
-			currentState = "playing"
-		}
-
-		msg := &models.GameMsg{
-			Type: "countdown",
-			Content: map[string]interface{}{
-				"remainingTime": int(remaining.Seconds()),
-				"currentState":  currentState,
-			},
-		}
-		h.ClientManager.BroadcastAll(msg)
-	}
-}
-
-func (h *Hub) RegisterClient(client *Client) {
-	h.ClientManager.RegisterClient(client)
-
-	if !h.CurrentRound.IsWaiting {
-		client.IsActive = false
-		h.sendWaitingNotificationToClient(client)
-	} else {
-		h.CurrentRound.mu.Lock()
-		h.CurrentRound.ActivePlayers[client.ID] = client
-		h.CurrentRound.mu.Unlock()
-		client.IsActive = true
-	}
-}
-
-func (h *Hub) sendWaitingNotificationToClient(client *Client) {
 	msg := &models.GameMsg{
-		Type: "waitingNotification",
+		Type: "countdown",
 		Content: map[string]interface{}{
-			"message":        "The game has already started. You will join in the next round.",
-			"nextRoundStart": getNextRoundStartTime(),
+			"remainingTime": stateRemainingTime,
+			"currentState":  currentState,
 		},
 	}
-	client.Send <- msg
+	h.ClientManager.BroadcastAll(msg)
 }
 
-func getNextRoundStartTime() time.Time {
+func (h *Hub) GetNextRoundStartTime() time.Time {
 	now := time.Now()
-	if now.Second() < 30 {
-		return time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 30, 0, now.Location())
-	}
-	return time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute()+1, 30, 0, now.Location())
-}
-
-func getTimeToNextState() time.Duration {
-	now := time.Now()
-	var target time.Time
-	if now.Second() < 30 {
-		target = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 30, 0, now.Location())
-	} else {
-		target = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute()+1, 0, 0, now.Location())
-	}
-	return target.Sub(now)
+	return time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute()+1, 0, 0, now.Location())
 }

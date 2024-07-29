@@ -84,10 +84,12 @@ func (cm *ClientManager) GetClients() map[*Client]bool {
 	return cm.clients
 }
 
-func (cm *ClientManager) GetClientByID(id string) *Client {
+func (cm *ClientManager) GetClientByID(id string) (*Client, bool) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	return cm.clientsById[id]
+
+	client, exists := cm.clientsById[id]
+	return client, exists
 }
 
 func (cm *ClientManager) BroadcastAll(msg *models.GameMsg) {
@@ -106,8 +108,8 @@ func (cm *ClientManager) BroadcastAll(msg *models.GameMsg) {
 func (cm *ClientManager) SendToClient(userId string, msg *models.GameMsg) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	client := cm.GetClientByID(userId)
-	if client == nil {
+	client, exists := cm.GetClientByID(userId)
+	if !exists {
 		zap.S().Errorf("client %s not found", userId)
 		return
 	}

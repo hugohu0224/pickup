@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"math/rand"
 	"pickup/internal/global"
@@ -38,6 +39,25 @@ func (h *Hub) InitStartPosition(client *Client) {
 		attempts++
 	}
 	zap.S().Errorf("failed to find start position for client %s after %d attempts", client.ID, maxAttempts)
+}
+
+func (h *Hub) RecoverStartPosition(client *Client) error {
+	position, ok := h.UsersInMap.Load(client.ID)
+	if !ok {
+		return errors.New(fmt.Sprintf("error getting position for client %s", client.ID))
+	}
+
+	msg := &models.GameMsg{
+		Type: models.PlayerPositionType,
+		Content: &models.PlayerPosition{
+			Valid:    true,
+			ID:       client.ID,
+			Position: position.(*models.Position)},
+	}
+
+	client.Send <- msg
+
+	return nil
 }
 
 func (h *Hub) GetPlayerPositionByUserId(userId string) (*models.PlayerPosition, error) {

@@ -65,8 +65,14 @@ func (c *Client) ReadPump(ctx context.Context) error {
 }
 
 func (c *Client) handleGameMsg(gameMsg *models.GameMsg) error {
-	if !c.IsActive && !c.Hub.CurrentRound.IsWaiting {
-		return fmt.Errorf("client is not active in the current round")
+	if !c.IsActive {
+		zap.S().Debugf("client is not active in the current round")
+		return nil
+	}
+
+	if c.Hub.CurrentRound.State != "playing" {
+		zap.S().Debug("current round is not playing")
+		return nil
 	}
 
 	switch gameMsg.Type {
@@ -75,7 +81,6 @@ func (c *Client) handleGameMsg(gameMsg *models.GameMsg) error {
 	case models.ItemActionType:
 		return c.handleItemAction(gameMsg)
 	case models.PlayerChatMsgType:
-
 		return nil
 	default:
 		return fmt.Errorf("invalid gameMsg type: %v", gameMsg.Type)

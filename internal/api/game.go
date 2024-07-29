@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"pickup/internal/game"
 	"pickup/internal/global"
+	"pickup/pkg/models"
 	"sync"
 )
 
@@ -60,7 +61,29 @@ func WebsocketEndpoint(c *gin.Context) {
 
 	// new Client
 	client := game.NewClient(userId, hub, conn)
-	hub.RegisterClient(client)
+
+	// handling start position
+	success := hub.RegisterClient(client)
+	if success {
+		client.Hub.InitStartPosition(client)
+	} else {
+		err = client.Hub.RecoverStartPosition(client)
+		if err != nil {
+			zap.S().Error("failed to recover start position", zap.Error(err))
+		}
+	}
+
+	// check waiting
+	if !client.IsActive {
+		msg := &models.GameMsg{
+			Type: "waitingNotification",
+			Content: map[string]interface{}{
+				"message":        "The game has already started. You will join in the next round.",
+				"nextRoundStart": hub.GetNextRoundStartTime().Unix(),
+			},
+		}
+		client.Send <- msg
+	}
 
 	// init game state
 	hub.SendAllGameRoundStateToClient(client)
@@ -103,7 +126,8 @@ func serveWs(client *game.Client) {
 		}
 	}
 
-	client.Hub.CleanupClient(client)
+	//client.Hub.CleanupClient(client)
+
 	zap.S().Infof("finished serving client %v", client.ID)
 }
 
@@ -115,4 +139,31 @@ func GetGamePage(c *gin.Context) {
 
 func GetGameRoom(c *gin.Context) {
 	c.HTML(http.StatusOK, "room.html", gin.H{})
+}
+
+func GetRoomStatus(c *gin.Context) {
+	roomId := c.Query("roomId")
+	if roomId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Room ID is required"})
+		return
+	}
+
+	hub := game.Hm.GetHubById(roomId)
+	if hub == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Room not found"})
+		return
+	}
+
+	nextRoundStart := hub.GetNextRoundStartTime()
+
+	hub.CurrentRound.Mu.RLock()
+	state := hub.CurrentRound.State
+	hub.CurrentRound.Mu.RUnlock()
+
+	response := gin.H{
+		"state":          state,
+		"nextRoundStart": nextRoundStart.UnixMilli(),
+	}
+
+	c.JSON(http.StatusOK, response)
 }
