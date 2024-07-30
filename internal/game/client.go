@@ -11,23 +11,23 @@ import (
 )
 
 type Client struct {
-	ID       string
-	Hub      *Hub
-	Conn     *websocket.Conn
-	Send     chan *models.GameMsg
-	Done     chan struct{}
-	IsActive bool
-	mu       sync.Mutex
+	ID           string
+	Hub          *Hub
+	Conn         *websocket.Conn
+	Send         chan *models.GameMsg
+	Done         chan struct{}
+	GameIsActive bool
+	mu           sync.Mutex
 }
 
 func NewClient(id string, hub *Hub, conn *websocket.Conn) *Client {
 	return &Client{
-		ID:       id,
-		Hub:      hub,
-		Conn:     conn,
-		Send:     make(chan *models.GameMsg, 128),
-		Done:     make(chan struct{}),
-		IsActive: false,
+		ID:           id,
+		Hub:          hub,
+		Conn:         conn,
+		Send:         make(chan *models.GameMsg, 128),
+		Done:         make(chan struct{}),
+		GameIsActive: false,
 	}
 }
 
@@ -45,7 +45,6 @@ func gameMsgContentSwapper[T any](gameMsg *models.GameMsg) (*T, error) {
 
 func (c *Client) ReadPump(ctx context.Context) error {
 	zap.S().Infof("ReadPump start Client: %v", c.ID)
-	defer c.Hub.ClientManager.RemoveClient(c)
 
 	for {
 		select {
@@ -65,7 +64,7 @@ func (c *Client) ReadPump(ctx context.Context) error {
 }
 
 func (c *Client) handleGameMsg(gameMsg *models.GameMsg) error {
-	if !c.IsActive {
+	if !c.GameIsActive {
 		zap.S().Debugf("client is not active in the current round")
 		return nil
 	}

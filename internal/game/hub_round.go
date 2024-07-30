@@ -114,10 +114,19 @@ func (h *Hub) InitializeRoundState() {
 	h.ClearPreviousRoundData()
 	h.InitAllItems()
 
+	// clear disconnect client
+	for _, client := range h.ClientManager.GetDisconnectedClients() {
+		zap.S().Debugf("get disconnected client %v, start to remove", client.ID)
+		h.CleanupClient(client)
+	}
+
+	// reset position
 	for client, _ := range h.ClientManager.GetClients() {
 		client.Hub.InitStartPosition(client)
-		client.IsActive = true
+		client.GameIsActive = true
 	}
+
+	// send new game state to clients
 	for client, _ := range h.ClientManager.GetClients() {
 		h.SendAllGameRoundStateToClient(client)
 	}
@@ -143,7 +152,7 @@ func (h *Hub) EndGameRound() {
 	if h.CurrentRound.State != "ended" {
 		h.CurrentRound.State = "ended"
 		for client, _ := range h.ClientManager.GetClients() {
-			client.IsActive = false
+			client.GameIsActive = false
 		}
 		h.BroadcastRoundState("ended")
 	}

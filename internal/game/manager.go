@@ -1,6 +1,7 @@
 package game
 
 import (
+	"fmt"
 	"go.uber.org/zap"
 	"pickup/pkg/models"
 	"sync"
@@ -52,16 +53,18 @@ func (hm *HubManager) RegisterHub(h *Hub) {
 }
 
 type ClientManager struct {
-	clients     map[*Client]bool
-	clientsById map[string]*Client
-	mu          sync.RWMutex
+	clients          map[*Client]bool
+	clientsById      map[string]*Client
+	clientsConnState map[string]bool
+	mu               sync.RWMutex
 }
 
 func NewClientManager() *ClientManager {
 	return &ClientManager{
-		clients:     make(map[*Client]bool),
-		clientsById: make(map[string]*Client),
-		mu:          sync.RWMutex{},
+		clients:          make(map[*Client]bool),
+		clientsById:      make(map[string]*Client),
+		clientsConnState: make(map[string]bool),
+		mu:               sync.RWMutex{},
 	}
 }
 
@@ -70,12 +73,25 @@ func (cm *ClientManager) RegisterClient(client *Client) {
 	defer cm.mu.Unlock()
 	cm.clients[client] = true
 	cm.clientsById[client.ID] = client
+	cm.clientsConnState[client.ID] = true
+}
+
+func (cm *ClientManager) UpdateClientConnStateById(userId string, bool bool) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.clientsConnState[userId] = bool
+	zap.S().Debug(fmt.Sprintf("UpdateClientConnState client:%v", userId), zap.Bool("bool", bool))
 }
 
 func (cm *ClientManager) RemoveClient(client *Client) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	delete(cm.clients, client)
+	delete(cm.clientsConnState, client.ID)
+	delete(cm.clientsById, client.ID)
+	client.Conn.Close()
+
+	zap.S().Debugf("Client %s removed", client.ID)
 }
 
 func (cm *ClientManager) GetClients() map[*Client]bool {
@@ -84,11 +100,22 @@ func (cm *ClientManager) GetClients() map[*Client]bool {
 	return cm.clients
 }
 
-func (cm *ClientManager) GetClientByID(id string) (*Client, bool) {
+func (cm *ClientManager) GetDisconnectedClients() []*Client {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
+	disconnected := make([]*Client, 0)
+	for userId, isOnline := range cm.clientsConnState {
+		if !isOnline {
+			disconnected = append(disconnected, cm.clientsById[userId])
+		}
+	}
+	return disconnected
+}
 
-	client, exists := cm.clientsById[id]
+func (cm *ClientManager) GetClientByID(userId string) (*Client, bool) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	client, exists := cm.clientsById[userId]
 	return client, exists
 }
 

@@ -64,9 +64,8 @@ func WebsocketEndpoint(c *gin.Context) {
 
 	// handling start position
 	success := hub.RegisterClient(client)
-	if success {
-		client.Hub.InitStartPosition(client)
-	} else {
+	if !success {
+		hub.ClientManager.UpdateClientConnStateById(client.ID, true)
 		err = client.Hub.RecoverStartPosition(client)
 		if err != nil {
 			zap.S().Error("failed to recover start position", zap.Error(err))
@@ -74,7 +73,7 @@ func WebsocketEndpoint(c *gin.Context) {
 	}
 
 	// check waiting
-	if !client.IsActive {
+	if !client.GameIsActive {
 		msg := &models.GameMsg{
 			Type: "waitingNotification",
 			Content: map[string]interface{}{
@@ -89,6 +88,9 @@ func WebsocketEndpoint(c *gin.Context) {
 	hub.SendAllGameRoundStateToClient(client)
 
 	serveWs(client)
+
+	client.Hub.ClientManager.UpdateClientConnStateById(client.ID, false)
+
 }
 
 func serveWs(client *game.Client) {
@@ -125,9 +127,6 @@ func serveWs(client *game.Client) {
 			break
 		}
 	}
-
-	//client.Hub.CleanupClient(client)
-
 	zap.S().Infof("finished serving client %v", client.ID)
 }
 

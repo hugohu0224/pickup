@@ -29,13 +29,12 @@ type Hub struct {
 func (h *Hub) RegisterClient(client *Client) bool {
 	if oldClient, exists := h.ClientManager.GetClientByID(client.ID); exists {
 		// sync client game state
-		client.IsActive = oldClient.IsActive
+		client.GameIsActive = oldClient.GameIsActive
 
-		// change to new conn
-		h.ClientManager.mu.Lock()
+		// change to new client conn
 		h.ClientManager.clientsById[oldClient.ID] = client
 		h.ClientManager.clients[client] = true
-		h.ClientManager.mu.Unlock()
+		h.ClientManager.UpdateClientConnStateById(client.ID, true)
 
 		// no register
 		zap.S().Debug("Client exists", zap.String("client", client.ID))
@@ -128,10 +127,12 @@ func (h *Hub) CleanupClient(client *Client) {
 	if err != nil {
 		zap.S().Errorf("failed to get the current position for user %s, due to:%v", userId, err.Error())
 	}
-
+	// clean hub state
 	h.OccupiedInMap.Delete(fmt.Sprintf("%d-%d", position.X, position.Y))
 	h.UsersInMap.Delete(userId)
 	h.Scores.Delete(userId)
+
+	// clean clientManager state
 	h.ClientManager.RemoveClient(client)
 	client.Conn.Close()
 	zap.S().Infof("cleaned up data for user %s in Hub %s", userId, h.ID)
@@ -142,7 +143,6 @@ func (h *Hub) Run() {
 
 	go h.ManageGameRounds()
 
-	// game msg processing
 	for {
 		select {
 		case playerPosition := <-h.PositionChan:
