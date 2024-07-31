@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
+	"pickup/internal/global"
 	"pickup/pkg/models"
 	"sync"
 )
@@ -64,7 +65,7 @@ func (c *Client) ReadPump(ctx context.Context) error {
 }
 
 func (c *Client) handleGameMsg(gameMsg *models.GameMsg) error {
-	if !c.GameIsActive {
+	if !c.GameIsActive && global.Dv.GetBool("RUNNING_GAME_JOIN_PROTECT") {
 		zap.S().Debugf("client is not active in the current round")
 		return nil
 	}

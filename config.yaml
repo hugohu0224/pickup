@@ -9,6 +9,7 @@ default: &default
   OBSNUMBER: 15
   COINNUMBER: 10
   DIAMOND: 2
+  RUNNING_GAME_JOIN_PROTECT: false
 
 dev:
   <<: *default

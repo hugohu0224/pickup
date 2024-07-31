@@ -26,7 +26,7 @@ func GetWebSocketURL(c *gin.Context) {
 }
 
 func WebsocketEndpoint(c *gin.Context) {
-	// get userId
+	// userId
 	userId, err := c.Cookie("userId")
 	if err != nil {
 		zap.S().Error("failed to get user id", zap.Error(err))
@@ -34,7 +34,7 @@ func WebsocketEndpoint(c *gin.Context) {
 		return
 	}
 
-	// get roomId
+	// roomId
 	roomId, err := c.Cookie("roomId")
 	if err != nil || len(roomId) == 0 {
 		zap.S().Error("failed to get roomId", zap.String("roomId", c.Query("room_id")))
@@ -42,7 +42,7 @@ func WebsocketEndpoint(c *gin.Context) {
 		return
 	}
 
-	// get hub
+	// hub
 	hub := game.Hm.GetHubById(roomId)
 	if hub == nil {
 		zap.S().Error("failed to get hub")
@@ -50,7 +50,7 @@ func WebsocketEndpoint(c *gin.Context) {
 		return
 	}
 
-	// http upgrade
+	// http
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		zap.S().Error("websocket upgrade failed", zap.Error(err))
@@ -59,11 +59,16 @@ func WebsocketEndpoint(c *gin.Context) {
 	}
 	zap.S().Debugf("websocket connected to server %v\n", conn.RemoteAddr())
 
-	// new Client
+	// register and check
 	client := game.NewClient(userId, hub, conn)
-
-	// handling start position
 	success := hub.RegisterClient(client)
+
+	// new player and allow force join in the running game
+	if success && !global.Dv.GetBool("RUNNING_GAME_JOIN_PROTECT") {
+		hub.InitStartPosition(client)
+		zap.S().Infof("client %s force join the running game, position init success", client.ID)
+	}
+	// old player and recover game state
 	if !success {
 		hub.ClientManager.UpdateClientConnStateById(client.ID, true)
 		err = client.Hub.RecoverStartPosition(client)
@@ -72,8 +77,8 @@ func WebsocketEndpoint(c *gin.Context) {
 		}
 	}
 
-	// check waiting
-	if !client.GameIsActive {
+	// waiting if not allow force join in the running game
+	if !client.GameIsActive && global.Dv.GetBool("RUNNING_GAME_JOIN_PROTECT") {
 		msg := &models.GameMsg{
 			Type: "waitingNotification",
 			Content: map[string]interface{}{
@@ -84,9 +89,8 @@ func WebsocketEndpoint(c *gin.Context) {
 		client.Send <- msg
 	}
 
-	// init game state
+	// init game state and serve
 	hub.SendAllGameRoundStateToClient(client)
-
 	serveWs(client)
 
 	// handling disconnected for recovery
