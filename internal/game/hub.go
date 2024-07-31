@@ -119,8 +119,8 @@ func (h *Hub) GetClientManager() *ClientManager {
 	return h.ClientManager
 }
 
-// CleanupClient removes all data associated with a client from the hub
-func (h *Hub) CleanupClient(client *Client) {
+// CleanupClientGameState removes all data associated with a client from the hub
+func (h *Hub) CleanupClientGameState(client *Client) {
 	userId := client.ID
 
 	position, err := h.GetPlayerPositionByUserId(userId)
@@ -134,7 +134,6 @@ func (h *Hub) CleanupClient(client *Client) {
 
 	// clean clientManager state
 	h.ClientManager.RemoveClient(client)
-	client.Conn.Close()
 	zap.S().Infof("cleaned up data for user %s in Hub %s", userId, h.ID)
 }
 

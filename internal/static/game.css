@@ -215,3 +215,8 @@ body {
     font-size: 20px;
     color: #ffffff;
 }
+
+.top-player {
+    color: gold;
+    font-weight: bold;
+}

@@ -41,9 +41,9 @@ func (h *Hub) initializeGameState() {
 	switch {
 	case second < 5:
 		h.StartWaitingPeriod()
-	case second < 10:
+	case second < 7:
 		h.CleanUpPeriod()
-	case second < 15:
+	case second < 10:
 		h.StartPreparePeriod()
 	case second < 59:
 		h.StartGameRound()
@@ -63,9 +63,9 @@ func (h *Hub) updateGameState() {
 		h.StartWaitingPeriod()
 	case second == 5 && h.CurrentRound.State != "cleanup":
 		h.CleanUpPeriod()
-	case second == 10 && h.CurrentRound.State != "preparing":
+	case second == 7 && h.CurrentRound.State != "preparing":
 		h.StartPreparePeriod()
-	case second == 15 && h.CurrentRound.State != "playing":
+	case second == 10 && h.CurrentRound.State != "playing":
 		h.StartGameRound()
 	case second == 59 && h.CurrentRound.State != "ended":
 		h.EndGameRound()
@@ -117,7 +117,7 @@ func (h *Hub) InitializeRoundState() {
 	// clear disconnect client
 	for _, client := range h.ClientManager.GetDisconnectedClients() {
 		zap.S().Debugf("get disconnected client %v, start to remove", client.ID)
-		h.CleanupClient(client)
+		h.ClientManager.RemoveClient(client)
 	}
 
 	// reset position
@@ -204,11 +204,11 @@ func (h *Hub) BroadcastCountdown() {
 	case second < 5:
 		target = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 5, 0, now.Location())
 		currentState = "waiting"
+	case second < 7:
+		target = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 7, 0, now.Location())
+		currentState = "cleanup"
 	case second < 10:
 		target = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 10, 0, now.Location())
-		currentState = "cleanup"
-	case second < 15:
-		target = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 15, 0, now.Location())
 		currentState = "preparing"
 	case second < 59:
 		target = time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute(), 59, 0, now.Location())

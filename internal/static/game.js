@@ -72,12 +72,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             .find(([name]) => name === 'userId')?.[1] || null;
     }
 
-    function syncTimeWithServer() {
-        const startTime = Date.now();
-        shared_state.socket.send(JSON.stringify({type: 'timeSync', content: {clientTime: startTime}}));
-    }
-
-
     function setupWebSocket() {
         shared_state.socket.onopen = () => {
             console.log("WebSocket connected");

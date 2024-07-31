@@ -89,8 +89,8 @@ func WebsocketEndpoint(c *gin.Context) {
 
 	serveWs(client)
 
+	// handling disconnected for recovery
 	client.Hub.ClientManager.UpdateClientConnStateById(client.ID, false)
-
 }
 
 func serveWs(client *game.Client) {

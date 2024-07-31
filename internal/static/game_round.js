@@ -10,6 +10,8 @@ export function handleRoundState(roundState) {
 
     console.log(`Round state changed to: ${state}`);
 
+    removeWaitingOverlay();
+
     if (state === 'playing') {
         shared_state.playerScores = {};
         Object.keys(shared_state.players).forEach(playerId => {
@@ -19,13 +21,17 @@ export function handleRoundState(roundState) {
         updateAllPlayerScores();
         removeWaitingOverlay();
         resumeGame();
-
-    } else if (state === 'waiting' || state === 'preparing' || state === 'ended') {
+    } else if (state === 'waiting') {
         pauseGame();
-        showWaitingOverlay(`${state.charAt(0).toUpperCase() + state.slice(1)} for next round.`, endTime.getTime() / 1000);
+        showWaitingOverlay(`Waiting for the next round. \nProcessing: ${state}`, true);
+    } else if (state === 'preparing' || state === 'ended') {
+        pauseGame();
+        showWaitingOverlay(`Waiting for the next round. \nProcessing: ${state}`);
     }
 
     if (state === 'cleanup') {
+        removeWaitingOverlay();
+        showWaitingOverlay(`Waiting for the next round. \nProcessing: ${state}`);
         resetGameData();
     }
 
@@ -48,8 +54,6 @@ export function resetGameData() {
     shared_state.players = {};
     shared_state.obstacles = [];
     shared_state.items = [];
-    // keep scores for show the top player in waiting overlay
-    // shared_state.playerScores = {};
 
     const gameBoard = document.getElementById('game-board');
     const cells = gameBoard.getElementsByClassName('cell');
@@ -86,45 +90,40 @@ export function resetGameData() {
 export function updateCountdown(countdownUpdate) {
     const remainingTime = countdownUpdate.remainingTime;
     const currentState = countdownUpdate.currentState;
-    const serverEndTime = countdownUpdate.serverEndTime;
 
     const timerDisplay = document.getElementById('time-left');
 
     let displayText = '';
     switch (currentState) {
         case 'waiting':
-            displayText = 'Waiting for next round';
+            displayText = `Showing Top Score: ${remainingTime}s`;
             break;
         case 'cleanup':
-            displayText = `Cleanup time: ${remainingTime}`;
+            displayText = `Cleanup time: ${remainingTime}s`;
             break;
         case 'preparing':
-            displayText = `Preparing time: ${remainingTime}`;
+            displayText = `Preparing time: ${remainingTime}s`;
             break;
         case 'playing':
-            displayText = `Game remaining time: ${remainingTime}`;
+            displayText = `Remaining time: ${remainingTime}s`;
             break;
         case 'ended':
             displayText = 'Game Ended';
             break;
         default:
-            displayText = `${currentState} time: ${remainingTime}`;
+            displayText = `${currentState} time: ${remainingTime}s`;
     }
 
     timerDisplay.textContent = displayText;
-
-    // Update waiting overlay countdown
-    updateWaitingCountdown(serverEndTime);
-
-    // Update top player info in overlay if it exists
-    const topPlayerInfo = document.getElementById('top-player-info');
-    if (topPlayerInfo) {
-        updateTopPlayerInfo(topPlayerInfo);
-    }
 }
 
-export function showWaitingOverlay(message, nextRoundStart) {
+export function showWaitingOverlay(message, showTopPlayer = false) {
     removeWaitingOverlay();
+
+    if (document.getElementById('waiting-overlay')) {
+        console.warn('Waiting overlay already exists, not creating a new one');
+        return;
+    }
 
     requestAnimationFrame(() => {
         const overlay = document.createElement('div');
@@ -153,43 +152,35 @@ export function showWaitingOverlay(message, nextRoundStart) {
             gap: 20px;
         `;
 
-        const topPlayerElement = document.createElement('p');
-        topPlayerElement.id = 'top-player-info';
-        updateTopPlayerInfo(topPlayerElement);
-
         const messageElement = document.createElement('p');
         messageElement.textContent = message;
 
-        const countdownElement = document.createElement('p');
-        countdownElement.id = 'waiting-countdown';
-
-        contentContainer.appendChild(topPlayerElement);
         contentContainer.appendChild(messageElement);
-        contentContainer.appendChild(countdownElement);
+
+        if (showTopPlayer) {
+            const topPlayerElement = document.createElement('p');
+            updateTopPlayerInfo(topPlayerElement);
+            contentContainer.appendChild(topPlayerElement);
+        }
+
         overlay.appendChild(contentContainer);
         document.body.appendChild(overlay);
-
-        if (nextRoundStart) {
-            updateWaitingCountdown(nextRoundStart);
-        }
     });
 }
 
 function updateTopPlayerInfo(element) {
     const topPlayer = shared_state.getTopPlayer();
     if (topPlayer) {
-        element.textContent = `Top player: ${topPlayer[0]} (Score: ${topPlayer[1]})`;
+        element.innerHTML = `<span class="top-player">Top Player: ${topPlayer[0]} (Score: ${topPlayer[1]})</span>`;
     } else {
         element.textContent = '';
     }
+    element.style.fontSize = '24px';
 }
 
 export function removeWaitingOverlay() {
-    const overlay = document.getElementById('waiting-overlay');
-    if (overlay) {
-        overlay.remove();
-    }
-    resumeGame();
+    const overlays = document.querySelectorAll('#waiting-overlay');
+    overlays.forEach(overlay => overlay.remove());
 }
 
 export function pauseGame() {
@@ -216,29 +207,8 @@ export function handleKeyPress(event) {
     }
 }
 
-export function handleWaitingNotification(content){
+export function handleWaitingNotification(content) {
     pauseGame();
+    removeWaitingOverlay();
     showWaitingOverlay(`${content.message}`, content.nextRoundStart);
-}
-
-function getAdjustedServerTime() {
-    return Date.now() + serverTimeDiff;
-}
-
-export function updateWaitingCountdown(serverEndTime) {
-    const countdownElement = document.getElementById('waiting-countdown');
-    if (!countdownElement) return;
-
-    const updateCountdown = () => {
-        const now = getAdjustedServerTime() / 1000;
-        const timeLeft = Math.max(0, Math.floor(serverEndTime - now));
-
-        if (timeLeft > 0) {
-            countdownElement.textContent = `Next round starts in ${timeLeft} seconds`;
-            requestAnimationFrame(updateCountdown);
-        } else {
-            countdownElement.textContent = 'Starting soon...';
-        }
-    };
-    updateCountdown();
 }
