@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"pickup/internal/game"
 	"pickup/internal/global"
+	"pickup/pkg/models"
 	"sync"
 )
 
@@ -61,15 +62,35 @@ func WebsocketEndpoint(c *gin.Context) {
 	// new Client
 	client := game.NewClient(userId, hub, conn)
 
-	// init client info to hub
-	hub.ClientManager.RegisterClient(client)
-	hub.InitStartPosition(client)
-	hub.SendObstaclesToClient(client)
-	hub.SendAllItemToClient(client)
-	hub.SendAllPositionToClient(client)
-	hub.SendAllScoresToClient(client)
+	// handling start position
+	success := hub.RegisterClient(client)
+	if !success {
+		hub.ClientManager.UpdateClientConnStateById(client.ID, true)
+		err = client.Hub.RecoverStartPosition(client)
+		if err != nil {
+			zap.S().Error("failed to recover start position", zap.Error(err))
+		}
+	}
+
+	// check waiting
+	if !client.GameIsActive {
+		msg := &models.GameMsg{
+			Type: "waitingNotification",
+			Content: map[string]interface{}{
+				"message":        "The game has already started. You will join in the next round.",
+				"nextRoundStart": hub.GetNextRoundStartTime().Unix(),
+			},
+		}
+		client.Send <- msg
+	}
+
+	// init game state
+	hub.SendAllGameRoundStateToClient(client)
 
 	serveWs(client)
+
+	// handling disconnected for recovery
+	client.Hub.ClientManager.UpdateClientConnStateById(client.ID, false)
 }
 
 func serveWs(client *game.Client) {
@@ -106,8 +127,6 @@ func serveWs(client *game.Client) {
 			break
 		}
 	}
-
-	client.Hub.CleanupClient(client)
 	zap.S().Infof("finished serving client %v", client.ID)
 }
 
@@ -119,4 +138,31 @@ func GetGamePage(c *gin.Context) {
 
 func GetGameRoom(c *gin.Context) {
 	c.HTML(http.StatusOK, "room.html", gin.H{})
+}
+
+func GetRoomStatus(c *gin.Context) {
+	roomId := c.Query("roomId")
+	if roomId == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Room ID is required"})
+		return
+	}
+
+	hub := game.Hm.GetHubById(roomId)
+	if hub == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Room not found"})
+		return
+	}
+
+	nextRoundStart := hub.GetNextRoundStartTime()
+
+	hub.CurrentRound.Mu.RLock()
+	state := hub.CurrentRound.State
+	hub.CurrentRound.Mu.RUnlock()
+
+	response := gin.H{
+		"state":          state,
+		"nextRoundStart": nextRoundStart.UnixMilli(),
+	}
+
+	c.JSON(http.StatusOK, response)
 }

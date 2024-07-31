@@ -1,6 +1,7 @@
 package game
 
 import (
+	"fmt"
 	"go.uber.org/zap"
 	"pickup/pkg/models"
 	"sync"
@@ -22,18 +23,26 @@ func (hm *HubManager) GetHubById(id string) *Hub {
 }
 
 func NewHub(hm *HubManager, id string) *Hub {
-	return &Hub{
-		ID:            id,
-		ClientManager: NewClientManager(),
-		HubManager:    hm,
-		OccupiedInMap: sync.Map{},
-		UsersInMap:    sync.Map{},
-		PositionChan:  make(chan *models.PlayerPosition),
-		Scores:        sync.Map{},
-		ActionChan:    make(chan *models.ItemAction),
-		MsgChan:       make(chan *models.ChatMsg),
-		mu:            sync.RWMutex{},
+	hub := &Hub{
+		ID:             id,
+		ClientManager:  NewClientManager(),
+		HubManager:     hm,
+		OccupiedInMap:  sync.Map{},
+		ObstaclesInMap: nil,
+		ItemsInMap:     sync.Map{},
+		UsersInMap:     sync.Map{},
+		PositionChan:   make(chan *models.PlayerPosition),
+		Scores:         sync.Map{},
+		ActionChan:     make(chan *models.ItemAction),
+		MsgChan:        make(chan *models.ChatMsg),
+		CurrentRound:   nil,
+		mu:             sync.RWMutex{},
+		obstaclesMu:    sync.RWMutex{},
 	}
+
+	hub.CurrentRound = hub.NewRound()
+
+	return hub
 }
 
 func (hm *HubManager) RegisterHub(h *Hub) {
@@ -44,16 +53,18 @@ func (hm *HubManager) RegisterHub(h *Hub) {
 }
 
 type ClientManager struct {
-	clients     map[*Client]bool
-	clientsById map[string]*Client
-	mu          sync.RWMutex
+	clients          map[*Client]bool
+	clientsById      map[string]*Client
+	clientsConnState map[string]bool
+	mu               sync.RWMutex
 }
 
 func NewClientManager() *ClientManager {
 	return &ClientManager{
-		clients:     make(map[*Client]bool),
-		clientsById: make(map[string]*Client),
-		mu:          sync.RWMutex{},
+		clients:          make(map[*Client]bool),
+		clientsById:      make(map[string]*Client),
+		clientsConnState: make(map[string]bool),
+		mu:               sync.RWMutex{},
 	}
 }
 
@@ -62,12 +73,25 @@ func (cm *ClientManager) RegisterClient(client *Client) {
 	defer cm.mu.Unlock()
 	cm.clients[client] = true
 	cm.clientsById[client.ID] = client
+	cm.clientsConnState[client.ID] = true
+}
+
+func (cm *ClientManager) UpdateClientConnStateById(userId string, bool bool) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	cm.clientsConnState[userId] = bool
+	zap.S().Debug(fmt.Sprintf("UpdateClientConnState client:%v", userId), zap.Bool("bool", bool))
 }
 
 func (cm *ClientManager) RemoveClient(client *Client) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	delete(cm.clients, client)
+	delete(cm.clientsConnState, client.ID)
+	delete(cm.clientsById, client.ID)
+	client.Conn.Close()
+
+	zap.S().Debugf("Client %s removed", client.ID)
 }
 
 func (cm *ClientManager) GetClients() map[*Client]bool {
@@ -76,10 +100,23 @@ func (cm *ClientManager) GetClients() map[*Client]bool {
 	return cm.clients
 }
 
-func (cm *ClientManager) GetClientByID(id string) *Client {
+func (cm *ClientManager) GetDisconnectedClients() []*Client {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	return cm.clientsById[id]
+	disconnected := make([]*Client, 0)
+	for userId, isOnline := range cm.clientsConnState {
+		if !isOnline {
+			disconnected = append(disconnected, cm.clientsById[userId])
+		}
+	}
+	return disconnected
+}
+
+func (cm *ClientManager) GetClientByID(userId string) (*Client, bool) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	client, exists := cm.clientsById[userId]
+	return client, exists
 }
 
 func (cm *ClientManager) BroadcastAll(msg *models.GameMsg) {
@@ -98,8 +135,8 @@ func (cm *ClientManager) BroadcastAll(msg *models.GameMsg) {
 func (cm *ClientManager) SendToClient(userId string, msg *models.GameMsg) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	client := cm.GetClientByID(userId)
-	if client == nil {
+	client, exists := cm.GetClientByID(userId)
+	if !exists {
 		zap.S().Errorf("client %s not found", userId)
 		return
 	}

@@ -11,21 +11,23 @@ import (
 )
 
 type Client struct {
-	ID   string
-	Hub  *Hub
-	Conn *websocket.Conn
-	Send chan *models.GameMsg
-	Done chan struct{}
-	mu   sync.Mutex
+	ID           string
+	Hub          *Hub
+	Conn         *websocket.Conn
+	Send         chan *models.GameMsg
+	Done         chan struct{}
+	GameIsActive bool
+	mu           sync.Mutex
 }
 
 func NewClient(id string, hub *Hub, conn *websocket.Conn) *Client {
 	return &Client{
-		ID:   id,
-		Hub:  hub,
-		Conn: conn,
-		Send: make(chan *models.GameMsg, 128),
-		Done: make(chan struct{}),
+		ID:           id,
+		Hub:          hub,
+		Conn:         conn,
+		Send:         make(chan *models.GameMsg, 128),
+		Done:         make(chan struct{}),
+		GameIsActive: false,
 	}
 }
 
@@ -43,7 +45,6 @@ func gameMsgContentSwapper[T any](gameMsg *models.GameMsg) (*T, error) {
 
 func (c *Client) ReadPump(ctx context.Context) error {
 	zap.S().Infof("ReadPump start Client: %v", c.ID)
-	defer c.Hub.ClientManager.RemoveClient(c)
 
 	for {
 		select {
@@ -63,13 +64,22 @@ func (c *Client) ReadPump(ctx context.Context) error {
 }
 
 func (c *Client) handleGameMsg(gameMsg *models.GameMsg) error {
+	if !c.GameIsActive {
+		zap.S().Debugf("client is not active in the current round")
+		return nil
+	}
+
+	if c.Hub.CurrentRound.State != "playing" {
+		zap.S().Debug("current round is not playing")
+		return nil
+	}
+
 	switch gameMsg.Type {
 	case models.PlayerPositionType:
 		return c.handlePlayerPosition(gameMsg)
 	case models.ItemActionType:
 		return c.handleItemAction(gameMsg)
 	case models.PlayerChatMsgType:
-
 		return nil
 	default:
 		return fmt.Errorf("invalid gameMsg type: %v", gameMsg.Type)

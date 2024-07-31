@@ -1,11 +1,14 @@
 current_env: dev
 
 default: &default
-  GRIDSIZE: 15
+  # server settings
   COOKIE_SECURE: false
+
+  # game settings
+  GRIDSIZE: 15
   OBSNUMBER: 15
-  COINNUMBER: 5
-  DIAMOND: 1
+  COINNUMBER: 10
+  DIAMOND: 2
 
 dev:
   <<: *default

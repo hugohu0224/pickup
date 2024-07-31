@@ -200,3 +200,23 @@ body {
 #time-left {
     font-weight: normal;
 }
+
+#waiting-overlay {
+    font-family: Arial, sans-serif;
+}
+
+#top-player-info {
+    font-size: 28px;
+    font-weight: bold;
+    color: #FFD700;
+}
+
+#waiting-countdown {
+    font-size: 20px;
+    color: #ffffff;
+}
+
+.top-player {
+    color: gold;
+    font-weight: bold;
+}
