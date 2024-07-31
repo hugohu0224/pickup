@@ -1,4 +1,5 @@
 export const shared_state = {
+    // vars
     gridSize: 15,
     socket: null,
     playerPosition: {x: 0, y: 0},

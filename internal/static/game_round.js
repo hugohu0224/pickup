@@ -1,8 +1,6 @@
 import {shared_state} from "./game_shared.js";
 import {sendItemActionRequest, sendMoveRequest, updatePlayerInList} from "./game_action.js";
 
-let serverTimeDiff = 0;
-
 export function handleRoundState(roundState) {
     const state = roundState.state;
     const currentTime = new Date(roundState.currentTime);
@@ -26,6 +24,7 @@ export function handleRoundState(roundState) {
         showWaitingOverlay(`Waiting for the next round. \nProcessing: ${state}`, true);
     } else if (state === 'preparing' || state === 'ended') {
         pauseGame();
+        updateTopPlayerOnScoreChange()
         showWaitingOverlay(`Waiting for the next round. \nProcessing: ${state}`);
     }
 
@@ -159,6 +158,7 @@ export function showWaitingOverlay(message, showTopPlayer = false) {
 
         if (showTopPlayer) {
             const topPlayerElement = document.createElement('p');
+            topPlayerElement.id = 'top-player-info';
             updateTopPlayerInfo(topPlayerElement);
             contentContainer.appendChild(topPlayerElement);
         }
@@ -168,7 +168,7 @@ export function showWaitingOverlay(message, showTopPlayer = false) {
     });
 }
 
-function updateTopPlayerInfo(element) {
+export function updateTopPlayerInfo(element) {
     const topPlayer = shared_state.getTopPlayer();
     if (topPlayer) {
         element.innerHTML = `<span class="top-player">Top Player: ${topPlayer[0]} (Score: ${topPlayer[1]})</span>`;
@@ -176,6 +176,13 @@ function updateTopPlayerInfo(element) {
         element.textContent = '';
     }
     element.style.fontSize = '24px';
+}
+
+export function updateTopPlayerOnScoreChange() {
+    const topPlayerElement = document.getElementById('top-player-info');
+    if (topPlayerElement) {
+        updateTopPlayerInfo(topPlayerElement);
+    }
 }
 
 export function removeWaitingOverlay() {

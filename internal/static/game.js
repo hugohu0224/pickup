@@ -9,11 +9,12 @@ import {
     updatePlayerInList,
 } from "./game_action.js";
 
-import{
+import {
     updateCountdown,
     handleRoundState,
     handleKeyPress,
     handleWaitingNotification,
+    updateTopPlayerOnScoreChange,
 } from "./game_round.js"
 
 import {
@@ -110,5 +111,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     function updateSingleScore(scoreUpdate) {
         shared_state.playerScores[scoreUpdate.id] = scoreUpdate.score;
         updatePlayerInList(scoreUpdate.id);
+        // for the showWaitingOverlay
+        updateTopPlayerOnScoreChange()
     }
 });

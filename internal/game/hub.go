@@ -21,7 +21,7 @@ type Hub struct {
 	PositionChan   chan *models.PlayerPosition
 	ActionChan     chan *models.ItemAction
 	MsgChan        chan *models.ChatMsg
-	CurrentRound   *GameRound
+	CurrentRound   *Round
 	mu             sync.RWMutex
 	obstaclesMu    sync.RWMutex
 }

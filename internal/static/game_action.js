@@ -91,6 +91,7 @@ export function updatePlayerInList(userId) {
 
     playerElement.className = `player-item${isCurrentPlayer ? ' current-player' : ''}`;
     playerElement.textContent = `Player ${userId}: Score ${score}${isCurrentPlayer ? ' (You)' : ''}`;
+
 }
 
 export function sendItemActionRequest() {

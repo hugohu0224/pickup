@@ -40,7 +40,7 @@ func NewHub(hm *HubManager, id string) *Hub {
 		obstaclesMu:    sync.RWMutex{},
 	}
 
-	hub.CurrentRound = hub.NewGameRound()
+	hub.CurrentRound = hub.NewRound()
 
 	return hub
 }

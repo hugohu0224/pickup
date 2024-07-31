@@ -7,14 +7,14 @@ import (
 	"time"
 )
 
-type GameRound struct {
+type Round struct {
 	Hub   *Hub
 	State string // "waiting", "cleanup", "preparing", "playing", "ended"
 	Mu    sync.RWMutex
 }
 
-func (h *Hub) NewGameRound() *GameRound {
-	return &GameRound{
+func (h *Hub) NewRound() *Round {
+	return &Round{
 		Hub:   h,
 		State: "waiting",
 	}
