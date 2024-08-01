@@ -109,7 +109,7 @@ func (h *Hub) StartPreparePeriod() {
 }
 
 func (h *Hub) InitializeRoundState() {
-	zap.S().Infof("hub: %v initializing round started", h.ID)
+	zap.S().Debugf("hub: %v initializing round started", h.ID)
 
 	h.ClearPreviousRoundData()
 	h.InitAllItems()
@@ -131,7 +131,7 @@ func (h *Hub) InitializeRoundState() {
 		h.SendAllGameRoundStateToClient(client)
 	}
 
-	zap.S().Infof("hub: %v initializing round completed", h.ID)
+	zap.S().Debugf("hub: %v initializing round completed", h.ID)
 }
 
 func (h *Hub) StartGameRound() {

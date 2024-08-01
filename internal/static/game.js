@@ -60,20 +60,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         shared_state.timerDisplay = document.getElementById('time-left');
     }
 
-    async function fetchConfig() {
+    async function fetchConfig(retryCount = 0) {
+        const maxRetries = 10;
+        const retryDelay = 0.5;
         try {
             const response = await fetch('/v1/config/js');
-            if (!response.ok) throw new Error('Failed to fetch config');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
             return await response.json();
         } catch (error) {
-            console.error('Error fetching config:', error);
-            return null;
+            console.error(`Error fetching config (attempt ${retryCount + 1}):`, error);
+
+            if (retryCount < maxRetries) {
+                console.log(`Retrying in ${retryDelay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+                return fetchConfig(retryCount + 1);
+            } else {
+                console.error('Max retries reached. Failed to fetch config.');
+                throw error;
+            }
         }
     }
 
     function connectWebSocket(config, retryCount = 0) {
         return new Promise((resolve, reject) => {
-            const maxRetries = 5;
+            const maxRetries = 10;
             const retryDelay = 500;
             let retryTimeoutId;
 
