@@ -16,9 +16,11 @@ dev:
   DOMAIN: localhost
   PORT: 8080
   ENDPOINT: localhost:8080
+  WS: ws
 
 prd:
   <<: *default
   DOMAIN: go-pickup.com
   ENDPOINT: go-pickup.com
   COOKIE_SECURE: true
+  WS: wss

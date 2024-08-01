@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
@@ -21,7 +22,10 @@ var upgrader = websocket.Upgrader{
 }
 
 func GetWebSocketURL(c *gin.Context) {
-	url := "ws://localhost:8080/v1/game/ws"
+	endpoint := global.Dv.GetString("ENDPOINT")
+	wsPrefix := global.Dv.GetString("WS")
+	url := fmt.Sprintf("%s://%s/v1/game/ws", wsPrefix, endpoint)
+
 	c.JSON(http.StatusOK, gin.H{"url": url})
 }
 
@@ -54,6 +58,7 @@ func WebsocketEndpoint(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		zap.S().Error("websocket upgrade failed", zap.Error(err))
+		zap.S().Debug("request details", zap.Any("headers", c.Request.Header))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upgrade connection"})
 		return
 	}

@@ -41,14 +41,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!config) throw new Error('Failed to load configuration');
 
         shared_state.gridSize = config.gridsize || shared_state.gridSize;
-        shared_state.socket = new WebSocket(`ws://${config.endpoint}/v1/game/ws`);
-        setupWebSocket();
+        shared_state.socket = await connectWebSocket(config);
 
         shared_state.playerId = getUserIdFromCookie();
         if (!shared_state.playerId) throw new Error('Player ID not found in cookie');
+
+        setupWebSocket();
+        initGame();
     } catch (error) {
         console.error('Error initializing game:', error);
+        notifyUser("Error: " + error.message);
     }
+
 
     function initializeDOMReferences() {
         shared_state.gameBoard = document.getElementById('game-board');
@@ -67,6 +71,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    function connectWebSocket(config, retryCount = 0) {
+        return new Promise((resolve, reject) => {
+            const maxRetries = 5;
+            const retryDelay = 500;
+            let retryTimeoutId;
+
+            const socket = new WebSocket(`${config.ws}://${config.endpoint}/v1/game/ws`);
+
+            socket.onopen = () => {
+                console.log('WebSocket connected successfully');
+                if (retryTimeoutId) {
+                    clearTimeout(retryTimeoutId);
+                }
+                resolve(socket);
+            };
+
+            socket.onerror = (error) => {
+                console.error('WebSocket connection error:', error);
+                if (retryCount < maxRetries) {
+                    console.log(`Retrying connection in ${retryDelay}ms... (Attempt ${retryCount + 1})`);
+                    retryTimeoutId = setTimeout(() => {
+                        connectWebSocket(config, retryCount + 1).then(resolve).catch(reject);
+                    }, retryDelay);
+                } else {
+                    reject(new Error('Max retries reached. WebSocket connection failed.'));
+                }
+            };
+        });
+    }
+
     function getUserIdFromCookie() {
         return document.cookie.split(';')
             .map(cookie => cookie.trim().split('='))
@@ -76,16 +110,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     function setupWebSocket() {
         shared_state.socket.onopen = () => {
             console.log("WebSocket connected");
-            initGame();
         };
+
         shared_state.socket.onmessage = (event) => {
             const data = JSON.parse(event.data);
             const handler = messageHandlers[data.type];
             if (handler) handler(data.content);
             else console.warn('Unhandled message type:', data.type);
         };
+
         shared_state.socket.onclose = () => console.log("WebSocket closed");
-        shared_state.socket.onerror = (error) => console.error("WebSocket error:", error);
+
+        shared_state.socket.onerror = (error) => {
+            console.error('WebSocket connection error:', error);
+        };
+
     }
 
     function initGame() {

@@ -56,7 +56,6 @@ func (c *Client) ReadPump(ctx context.Context) error {
 			if err := c.Conn.ReadJSON(&gameMsg); err != nil {
 				return fmt.Errorf("failed to read JSON: %w", err)
 			}
-
 			if err := c.handleGameMsg(&gameMsg); err != nil {
 				return fmt.Errorf("failed to handle game message: %w", err)
 			}
