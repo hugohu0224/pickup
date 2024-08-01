@@ -83,7 +83,7 @@ func WebsocketEndpoint(c *gin.Context) {
 	}
 
 	// waiting if not allow force join in the running game
-	if !client.GameIsActive && global.Dv.GetBool("RUNNING_GAME_JOIN_PROTECT") {
+	if !client.AllowJoinGame && global.Dv.GetBool("RUNNING_GAME_JOIN_PROTECT") {
 		msg := &models.GameMsg{
 			Type: "waitingNotification",
 			Content: map[string]interface{}{

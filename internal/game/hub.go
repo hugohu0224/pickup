@@ -29,7 +29,7 @@ type Hub struct {
 func (h *Hub) RegisterClient(client *Client) bool {
 	if oldClient, exists := h.ClientManager.GetClientByID(client.ID); exists {
 		// sync client game state
-		client.GameIsActive = oldClient.GameIsActive
+		client.AllowJoinGame = oldClient.AllowJoinGame
 
 		// change to new client conn
 		h.ClientManager.clientsById[oldClient.ID] = client

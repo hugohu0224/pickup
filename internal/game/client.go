@@ -16,19 +16,19 @@ type Client struct {
 	Hub          *Hub
 	Conn         *websocket.Conn
 	Send         chan *models.GameMsg
-	Done         chan struct{}
-	GameIsActive bool
-	mu           sync.Mutex
+	Done          chan struct{}
+	AllowJoinGame bool
+	mu            sync.Mutex
 }
 
 func NewClient(id string, hub *Hub, conn *websocket.Conn) *Client {
 	return &Client{
-		ID:           id,
-		Hub:          hub,
-		Conn:         conn,
-		Send:         make(chan *models.GameMsg, 128),
-		Done:         make(chan struct{}),
-		GameIsActive: false,
+		ID:            id,
+		Hub:           hub,
+		Conn:          conn,
+		Send:          make(chan *models.GameMsg, 128),
+		Done:          make(chan struct{}),
+		AllowJoinGame: false,
 	}
 }
 
@@ -64,7 +64,7 @@ func (c *Client) ReadPump(ctx context.Context) error {
 }
 
 func (c *Client) handleGameMsg(gameMsg *models.GameMsg) error {
-	if !c.GameIsActive && global.Dv.GetBool("RUNNING_GAME_JOIN_PROTECT") {
+	if !c.AllowJoinGame && global.Dv.GetBool("RUNNING_GAME_JOIN_PROTECT") {
 		zap.S().Debugf("client is not active in the current round")
 		return nil
 	}

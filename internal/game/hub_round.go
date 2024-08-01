@@ -123,7 +123,7 @@ func (h *Hub) InitializeRoundState() {
 	// reset position
 	for client, _ := range h.ClientManager.GetClients() {
 		client.Hub.InitStartPosition(client)
-		client.GameIsActive = true
+		client.AllowJoinGame = true
 	}
 
 	// send new game state to clients
@@ -152,7 +152,7 @@ func (h *Hub) EndGameRound() {
 	if h.CurrentRound.State != "ended" {
 		h.CurrentRound.State = "ended"
 		for client, _ := range h.ClientManager.GetClients() {
-			client.GameIsActive = false
+			client.AllowJoinGame = false
 		}
 		h.BroadcastRoundState("ended")
 	}
