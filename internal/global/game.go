@@ -6,8 +6,7 @@ import (
 )
 
 var (
-	Dv             *viper.Viper // default config
-	Gv             *viper.Viper // google client config
-	UserTokenMap   sync.Map
-	UserLoginState sync.Map // map[hashedEmail]bool
+	Dv           *viper.Viper // default config
+	Gv           *viper.Viper // google client config
+	UserTokenMap sync.Map
 )

@@ -85,18 +85,6 @@ func GoogleAuthCallback(c *gin.Context) {
 	// for response security
 	hashedEmail := hashEmailTo8Chars(userinfo.Email)
 
-	// check multi login
-	if userIsPlaying, exists := global.UserLoginState.Load(hashedEmail); exists {
-		if userIsPlaying.(bool) {
-			c.Redirect(http.StatusFound, "/v1/auth/login?error=You are already logged in.")
-			return
-		}
-	}
-
-	// register login to avoid multi login
-	// false represent login but not into game room yet
-	global.UserLoginState.Store(hashedEmail, false)
-
 	// register token to avoid using websocket without Google authentication.
 	global.UserTokenMap.Store(hashedEmail, token.AccessToken)
 
