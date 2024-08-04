@@ -89,8 +89,8 @@ func GoogleAuthCallback(c *gin.Context) {
 	global.UserTokenMap.Store(hashedEmail, token.AccessToken)
 
 	// set cookies
-	c.SetCookie("sessionToken", token.AccessToken, 3600, "/", global.Dv.GetString("DOMAIN"), false, true)
-	c.SetCookie("userId", hashedEmail, 3600, "/", global.Dv.GetString("DOMAIN"), false, false)
+	c.SetCookie("sessionToken", token.AccessToken, 3600, "/", global.Dv.GetString("DOMAIN"), global.Dv.GetBool("COOKIE_SECURE"), true)
+	c.SetCookie("userId", hashedEmail, 3600, "/", global.Dv.GetString("DOMAIN"), global.Dv.GetBool("COOKIE_SECURE"), false)
 
 	// redirect
 	c.Redirect(http.StatusFound, fmt.Sprintf("/v1/game/room"))
