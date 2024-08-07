@@ -12,6 +12,9 @@ func main() {
 	initial.InitConfigByViper()
 	zap.S().Infof("config initialized")
 
+	initial.InitJWTSecretKey()
+	zap.S().Infof("jwt secret key initialized")
+
 	initial.InitHubManager()
 	zap.S().Infof("game hubs initialized")
 
