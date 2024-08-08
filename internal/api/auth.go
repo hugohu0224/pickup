@@ -11,6 +11,7 @@ import (
 	"golang.org/x/oauth2/google"
 	"io"
 	"net/http"
+	"pickup/internal/auth"
 	"pickup/internal/global"
 )
 
@@ -72,7 +73,7 @@ func RedirectToGoogleAuth(c *gin.Context) {
 func GoogleAuthCallback(c *gin.Context) {
 	token, err := googleOauthConfig.Exchange(c, c.Query("code"))
 	if err != nil {
-		c.Redirect(http.StatusFound, "/v1/auth/login?error=Failed to exchange token")
+		c.Redirect(http.StatusFound, "/v1/auth/login?error=Failed to exchange google access-token")
 		return
 	}
 
@@ -84,13 +85,16 @@ func GoogleAuthCallback(c *gin.Context) {
 
 	// for response security
 	hashedEmail := hashEmailTo8Chars(userinfo.Email)
+	jwt, err := auth.GenerateJWT(hashedEmail, global.Dv.GetInt("JWT_EXPIRES_MIN"))
+	if err != nil {
+		c.Redirect(http.StatusFound, "/v1/auth/login?error=Failed to generate token")
+	}
 
 	// register token to avoid using websocket without Google authentication.
-	global.UserTokenMap.Store(hashedEmail, token.AccessToken)
+	global.UserJWTMap.Store(hashedEmail, jwt)
 
-	// set cookies
-	c.SetCookie("sessionToken", token.AccessToken, 3600, "/", global.Dv.GetString("DOMAIN"), global.Dv.GetBool("COOKIE_SECURE"), true)
-	c.SetCookie("userId", hashedEmail, 3600, "/", global.Dv.GetString("DOMAIN"), global.Dv.GetBool("COOKIE_SECURE"), false)
+	// set jwt
+	c.SetCookie("jwt", jwt, 3600, "/", global.Dv.GetString("DOMAIN"), global.Dv.GetBool("COOKIE_SECURE"), true)
 
 	// redirect
 	c.Redirect(http.StatusFound, fmt.Sprintf("/v1/game/room"))

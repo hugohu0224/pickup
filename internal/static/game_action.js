@@ -114,6 +114,10 @@ export function notifyUser(message) {
     console.log(message);
 }
 
+export function alertUser(message) {
+    alert(message);
+}
+
 export function handleMoveResponse(response) {
     if (response.id === shared_state.playerId) {
         if (response.valid) {

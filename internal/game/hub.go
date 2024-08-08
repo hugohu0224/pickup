@@ -37,12 +37,12 @@ func (h *Hub) RegisterClient(client *Client) bool {
 		h.ClientManager.UpdateClientConnStateById(client.ID, true)
 
 		// no register will return false and recover the previous game state for client
-		zap.S().Debug("Client exists", zap.String("client", client.ID))
+		zap.S().Debug("Client exists, no need to register", zap.String("client", client.ID))
 		return false
 	} else {
 		// register
 		h.ClientManager.RegisterClient(client)
-		zap.S().Debug("Client register", zap.String("client", client.ID))
+		zap.S().Debug("Client not exists, need to register", zap.String("client", client.ID))
 		return true
 	}
 }

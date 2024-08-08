@@ -7,8 +7,6 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"go.uber.org/zap"
 	"os"
-	"pickup/internal/global"
-	"pickup/pkg/models"
 	"time"
 )
 
@@ -17,11 +15,11 @@ type CustomClaims struct {
 	jwt.RegisteredClaims
 }
 
-func GenerateJWT(userId string) (string, error) {
+func GenerateJWT(userId string, expiresMin int) (string, error) {
 	claims := CustomClaims{
 		UserID: userId,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(expiresMin) * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
 		},
@@ -46,78 +44,6 @@ func ValidateJWT(tokenString string) (*CustomClaims, error) {
 	}
 
 	return nil, errors.New("invalid token")
-}
-
-func StoreUserToken(userId string, token string) {
-	jwtToken, err := GenerateJWT(userId)
-	if err != nil {
-		return
-	}
-
-	now := time.Now()
-	global.UserTokenMap.Store(userId, models.TokenInfo{
-		Token:            jwtToken,
-		LastActivityTime: now,
-		ExpirationTime:   now.Add(24 * time.Hour),
-	})
-}
-
-func IsValidUserToken(userId string, token string) bool {
-	value, ok := global.UserTokenMap.Load(userId)
-	if !ok {
-		return false
-	}
-	tokenInfo, ok := value.(models.TokenInfo)
-	if !ok {
-		return false
-	}
-
-	claims, err := ValidateJWT(tokenInfo.Token)
-	if err != nil || claims.UserID != userId {
-		global.UserTokenMap.Delete(userId)
-		return false
-	}
-
-	now := time.Now()
-	if now.After(tokenInfo.ExpirationTime) {
-		global.UserTokenMap.Delete(userId)
-		return false
-	}
-
-	tokenInfo.LastActivityTime = now
-	global.UserTokenMap.Store(userId, tokenInfo)
-	return true
-}
-
-func ExtendTokenExpiration(userId string, duration time.Duration) bool {
-	value, ok := global.UserTokenMap.Load(userId)
-	if !ok {
-		return false
-	}
-	tokenInfo, ok := value.(models.TokenInfo)
-	if !ok {
-		return false
-	}
-
-	claims, err := ValidateJWT(tokenInfo.Token)
-	if err != nil || claims.UserID != userId {
-		global.UserTokenMap.Delete(userId)
-		return false
-	}
-
-	now := time.Now()
-	newExpirationTime := now.Add(duration)
-
-	newToken, err := GenerateJWT(userId)
-	if err != nil {
-		return false
-	}
-
-	tokenInfo.Token = newToken
-	tokenInfo.ExpirationTime = newExpirationTime
-	tokenInfo.LastActivityTime = now
-	global.UserTokenMap.Store(userId, tokenInfo)
-	return true
 }
 
 func LoadOrGenerateJWTSecret() []byte {

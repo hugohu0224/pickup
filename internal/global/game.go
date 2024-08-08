@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	Dv           *viper.Viper // default config
-	Gv           *viper.Viper // google client config
-	UserTokenMap sync.Map
+	Dv         *viper.Viper // default config
+	Gv         *viper.Viper // google client config
+	UserJWTMap sync.Map     // map[userId]*jwt
 )

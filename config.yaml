@@ -2,7 +2,7 @@ current_env: dev
 
 default: &default
   # server settings
-  COOKIE_SECURE: false
+  JWT_EXPIRES_MIN : 180
 
   # game settings
   GRIDSIZE: 15
@@ -17,10 +17,13 @@ dev:
   PORT: 8080
   ENDPOINT: localhost:8080
   WS: ws
+  COOKIE_SECURE: false
+  ALLOW_CORS: true
 
 prd:
   <<: *default
   DOMAIN: go-pickup.com
   ENDPOINT: go-pickup.com
   COOKIE_SECURE: true
+  ALLOW_CORS: false
   WS: wss

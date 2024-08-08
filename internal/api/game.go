@@ -7,6 +7,7 @@ import (
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 	"net/http"
+	"pickup/internal/auth"
 	"pickup/internal/game"
 	"pickup/internal/global"
 	"pickup/pkg/models"
@@ -30,13 +31,22 @@ func GetWebSocketURL(c *gin.Context) {
 }
 
 func WebsocketEndpoint(c *gin.Context) {
-	// userId
-	userId, err := c.Cookie("userId")
+
+	tokenString, err := c.Cookie("jwt")
 	if err != nil {
-		zap.S().Error("failed to get user id", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get user id"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "No jwt provided"})
 		return
 	}
+
+	claims, err := auth.ValidateJWT(tokenString)
+	if err != nil {
+		zap.S().Error("token is invalid", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "token is invalid"})
+		return
+	}
+
+	// userId
+	userId := claims.UserID
 
 	// roomId
 	roomId, err := c.Cookie("roomId")

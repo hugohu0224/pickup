@@ -41,11 +41,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!config) throw new Error('Failed to load configuration');
 
         shared_state.gridSize = config.gridsize || shared_state.gridSize;
+        shared_state.playerId = await getUserId();
+        if (!shared_state.playerId) throw new Error('Failed to get user ID');
+
         shared_state.socket = await connectWebSocket(config);
-
-        shared_state.playerId = getUserIdFromCookie();
-        if (!shared_state.playerId) throw new Error('Player ID not found in cookie');
-
         setupWebSocket();
         initGame();
     } catch (error) {
@@ -113,10 +112,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    function getUserIdFromCookie() {
-        return document.cookie.split(';')
-            .map(cookie => cookie.trim().split('='))
-            .find(([name]) => name === 'userId')?.[1] || null;
+    async function getUserId() {
+        try {
+            const response = await fetch('/v1/user/id', {
+                method: 'GET',
+                credentials: 'include',
+            });
+            if (!response.ok) {
+                throw new Error('Failed to fetch user ID');
+            }
+            const data = await response.json();
+            return data.user_id;
+        } catch (error) {
+            console.error('Error fetching user ID:', error);
+            return null;
+        }
     }
 
     function setupWebSocket() {
