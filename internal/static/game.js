@@ -1,25 +1,23 @@
 import {
+    addItem,
+    addObstacle,
+    handleItemCollected,
+    handleMoveResponse,
+    notifyUser,
     sendMoveRequest,
     updateObstacleOnBoard,
-    addObstacle,
-    handleMoveResponse,
-    addItem,
-    handleItemCollected,
-    notifyUser,
     updatePlayerInList,
 } from "./game_action.js";
 
 import {
-    updateCountdown,
-    handleRoundState,
     handleKeyPress,
+    handleRoundState,
     handleWaitingNotification,
+    updateCountdown,
     updateTopPlayerOnScoreChange,
 } from "./game_round.js"
 
-import {
-    shared_state
-} from "./game_shared.js";
+import {shared_state} from "./game_shared.js";
 
 document.addEventListener('DOMContentLoaded', async () => {
     const messageHandlers = {

@@ -19,6 +19,7 @@ dev:
   WS: ws
   COOKIE_SECURE: false
   ALLOW_CORS: true
+  HTTP_TYPE: http
 
 prd:
   <<: *default
@@ -27,3 +28,4 @@ prd:
   COOKIE_SECURE: true
   ALLOW_CORS: false
   WS: wss
+  HTTP_TYPE: https

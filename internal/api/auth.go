@@ -54,11 +54,11 @@ func getUserInfo(ctx context.Context, token *oauth2.Token) (*GoogleUserInfo, err
 }
 
 func RedirectToGoogleAuth(c *gin.Context) {
-
 	endpoint := global.Dv.GetString("ENDPOINT")
+	httpType := global.Dv.GetString("HTTP_TYPE")
 
 	googleOauthConfig = &oauth2.Config{
-		RedirectURL:  fmt.Sprintf("http://%s/v1/auth/google/callback", endpoint),
+		RedirectURL:  fmt.Sprintf("%s://%s/v1/auth/google/callback", httpType, endpoint),
 		ClientID:     global.Gv.GetString("web.client_id"),
 		ClientSecret: global.Gv.GetString("web.client_secret"),
 		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email"},
