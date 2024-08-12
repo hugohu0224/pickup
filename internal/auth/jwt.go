@@ -5,9 +5,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"github.com/golang-jwt/jwt/v4"
-	"go.uber.org/zap"
 	"os"
 	"time"
+)
+
+const (
+	secretKeyFile = "jwt_secret.key"
 )
 
 type CustomClaims struct {
@@ -46,23 +49,21 @@ func ValidateJWT(tokenString string) (*CustomClaims, error) {
 	return nil, errors.New("invalid token")
 }
 
-func LoadOrGenerateJWTSecret() []byte {
+func LoadOrGenerateJWTSecret() ([]byte, error) {
 	secretKeyFile := "jwt_secret.key"
 	if keyBytes, err := os.ReadFile(secretKeyFile); err == nil {
-		return keyBytes
+		return keyBytes, nil
 	}
 
-	// generate
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
-		zap.S().Panicf("cannot generate JWT secret key: %v", err)
+		return nil, err
 	}
 	keyString := base64.StdEncoding.EncodeToString(key)
 
-	// store
 	if err := os.WriteFile(secretKeyFile, []byte(keyString), 0600); err != nil {
-		zap.S().Panicf("cannot store JWT secret key: %v", err)
+		return nil, err
 	}
 
-	return []byte(keyString)
+	return []byte(keyString), nil
 }
