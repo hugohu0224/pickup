@@ -6,54 +6,24 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
-	"io"
-	"net/http"
+
 	"pickup/internal/auth"
 	"pickup/internal/global"
 )
 
-var (
-	googleOauthConfig *oauth2.Config
-)
+var googleOauthConfig *oauth2.Config
 
 type GoogleUserInfo struct {
 	Email         string `json:"email"`
 	VerifiedEmail bool   `json:"verified_email"`
 }
 
-func GetLoginPage(c *gin.Context) {
-	errorMsg := c.Query("error")
-	c.HTML(http.StatusOK, "login.html", gin.H{
-		"error": errorMsg,
-	})
-}
-
-func getUserInfo(ctx context.Context, token *oauth2.Token) (*GoogleUserInfo, error) {
-	client := oauth2.NewClient(ctx, oauth2.StaticTokenSource(token))
-	response, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
-	if err != nil {
-		return nil, fmt.Errorf("failed getting user info: %s", err.Error())
-	}
-	defer response.Body.Close()
-
-	contents, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed reading response body: %s", err.Error())
-	}
-
-	var userInfo GoogleUserInfo
-	err = json.Unmarshal(contents, &userInfo)
-	if err != nil {
-		return nil, fmt.Errorf("failed parsing user info: %s", err.Error())
-	}
-
-	return &userInfo, nil
-}
-
-func RedirectToGoogleAuth(c *gin.Context) {
+func init() {
 	endpoint := global.Dv.GetString("ENDPOINT")
 	httpType := global.Dv.GetString("HTTP_TYPE")
 
@@ -64,45 +34,67 @@ func RedirectToGoogleAuth(c *gin.Context) {
 		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email"},
 		Endpoint:     google.Endpoint,
 	}
+}
 
+func GetLoginPage(c *gin.Context) {
+	c.HTML(http.StatusOK, "login.html", gin.H{
+		"error": c.Query("error"),
+	})
+}
+
+func getUserInfo(ctx context.Context, token *oauth2.Token) (*GoogleUserInfo, error) {
+	client := oauth2.NewClient(ctx, oauth2.StaticTokenSource(token))
+	response, err := client.Get("https://www.googleapis.com/oauth2/v2/userinfo")
+	if err != nil {
+		return nil, fmt.Errorf("failed getting user info: %w", err)
+	}
+	defer response.Body.Close()
+
+	var userInfo GoogleUserInfo
+	if err := json.NewDecoder(response.Body).Decode(&userInfo); err != nil {
+		return nil, fmt.Errorf("failed parsing user info: %w", err)
+	}
+
+	return &userInfo, nil
+}
+
+func RedirectToGoogleAuth(c *gin.Context) {
 	url := googleOauthConfig.AuthCodeURL("state")
-
 	c.Redirect(http.StatusTemporaryRedirect, url)
 }
 
 func GoogleAuthCallback(c *gin.Context) {
 	token, err := googleOauthConfig.Exchange(c, c.Query("code"))
 	if err != nil {
-		c.Redirect(http.StatusFound, "/v1/auth/login?error=Failed to exchange google access-token")
+		redirectWithError(c, "Failed to exchange google access-token")
 		return
 	}
 
 	userinfo, err := getUserInfo(c, token)
 	if err != nil {
-		c.Redirect(http.StatusFound, "/v1/auth/login?error=Failed to get user info")
+		redirectWithError(c, "Failed to get user info")
 		return
 	}
 
-	// for response security
 	hashedEmail := hashEmailTo8Chars(userinfo.Email)
 	jwt, err := auth.GenerateJWT(hashedEmail, global.Dv.GetInt("JWT_EXPIRES_MIN"))
 	if err != nil {
-		c.Redirect(http.StatusFound, "/v1/auth/login?error=Failed to generate token")
+		redirectWithError(c, "Failed to generate token")
+		return
 	}
 
-	// register token to avoid using websocket without Google authentication.
 	global.UserJWTMap.Store(hashedEmail, jwt)
 
-	// set jwt
 	c.SetCookie("jwt", jwt, 3600, "/", global.Dv.GetString("DOMAIN"), global.Dv.GetBool("COOKIE_SECURE"), true)
+	c.Redirect(http.StatusFound, "/v1/game/room")
+}
 
-	// redirect
-	c.Redirect(http.StatusFound, fmt.Sprintf("/v1/game/room"))
+func redirectWithError(c *gin.Context, message string) {
+	c.Redirect(http.StatusFound, fmt.Sprintf("/v1/auth/login?error=%s", message))
 }
 
 func hashEmailTo8Chars(email string) string {
 	hasher := md5.New()
 	hasher.Write([]byte(email))
-	fullHash := hex.EncodeToString(hasher.Sum(nil))
-	return fullHash[:8]
+	return hex.EncodeToString(hasher.Sum(nil))[:8]
 }
