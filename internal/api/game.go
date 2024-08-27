@@ -3,35 +3,33 @@ package api
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"sync"
+
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
-	"net/http"
+
 	"pickup/internal/auth"
 	"pickup/internal/game"
 	"pickup/internal/global"
 	"pickup/pkg/models"
-	"sync"
 )
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  64,
-	WriteBufferSize: 64,
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
 func GetWebSocketURL(c *gin.Context) {
 	endpoint := global.Dv.GetString("ENDPOINT")
 	wsPrefix := global.Dv.GetString("WS")
 	url := fmt.Sprintf("%s://%s/v1/game/ws", wsPrefix, endpoint)
-
 	c.JSON(http.StatusOK, gin.H{"url": url})
 }
 
 func WebsocketEndpoint(c *gin.Context) {
-
 	tokenString, err := c.Cookie("jwt")
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "No jwt provided"})
@@ -41,75 +39,59 @@ func WebsocketEndpoint(c *gin.Context) {
 	claims, err := auth.ValidateJWT(tokenString)
 	if err != nil {
 		zap.S().Error("token is invalid", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "token is invalid"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "token is invalid"})
 		return
 	}
 
-	// userId
-	userId := claims.UserID
-
-	// roomId
 	roomId, err := c.Cookie("roomId")
-	if err != nil || len(roomId) == 0 {
-		zap.S().Error("failed to get roomId", zap.String("roomId", c.Query("room_id")))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get roomId"})
+	if err != nil || roomId == "" {
+		zap.S().Error("failed to get roomId", zap.Error(err))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "failed to get roomId"})
 		return
 	}
 
-	// hub
 	hub := game.Hm.GetHubById(roomId)
 	if hub == nil {
 		zap.S().Error("failed to get hub")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get hub"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "failed to get hub"})
 		return
 	}
 
-	// http
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		zap.S().Error("websocket upgrade failed", zap.Error(err))
-		zap.S().Debug("request details", zap.Any("headers", c.Request.Header))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to upgrade connection"})
 		return
 	}
-	zap.S().Debugf("websocket connected to server %v\n", conn.RemoteAddr())
+	defer conn.Close()
 
-	// register and check
-	client := game.NewClient(userId, hub, conn)
+	client := game.NewClient(claims.UserID, hub, conn)
 	success := hub.RegisterClient(client)
 
-	// new player and allow force join in the running game
 	if success && !global.Dv.GetBool("RUNNING_GAME_JOIN_PROTECT") {
 		hub.InitStartPosition(client)
 		zap.S().Infof("client %s force join the running game, position init success", client.ID)
-	}
-	// old player and recover game state
-	if !success {
+	} else if !success {
 		hub.ClientManager.UpdateClientConnStateById(client.ID, true)
-		err = client.Hub.RecoverStartPosition(client)
-		if err != nil {
+		if err := client.Hub.RecoverStartPosition(client); err != nil {
 			zap.S().Error("failed to recover start position", zap.Error(err))
 		}
 	}
 
-	// waiting if not allow force join in the running game
 	if !client.AllowJoinGame && global.Dv.GetBool("RUNNING_GAME_JOIN_PROTECT") {
-		msg := &models.GameMsg{
+		client.Send <- &models.GameMsg{
 			Type: "waitingNotification",
 			Content: map[string]interface{}{
 				"message":        "The game has already started. You will join in the next round.",
 				"nextRoundStart": hub.GetNextRoundStartTime().Unix(),
 			},
 		}
-		client.Send <- msg
 	}
 
-	// init game state and serve
 	hub.SendAllGameRoundStateToClient(client)
 	serveWs(client)
 
-	// handling disconnected for recovery
-	client.Hub.ClientManager.UpdateClientConnStateById(client.ID, false)
+	hub.ClientManager.UpdateClientConnStateById(client.ID, false)
 }
 
 func serveWs(client *game.Client) {
@@ -143,20 +125,19 @@ func serveWs(client *game.Client) {
 	for err := range errChan {
 		if err != nil {
 			zap.S().Errorf("Error in client pump: %v", err)
-			break
+			return
 		}
 	}
 	zap.S().Infof("finished serving client %v", client.ID)
 }
 
 func GetGamePage(c *gin.Context) {
-	roomId := c.Query("roomId")
-	c.SetCookie("roomId", roomId, 3600, "/", global.Dv.GetString("DOMAIN"), false, true)
-	c.HTML(http.StatusOK, "game.html", gin.H{})
+	c.SetCookie("roomId", c.Query("roomId"), 3600, "/", global.Dv.GetString("DOMAIN"), false, true)
+	c.HTML(http.StatusOK, "game.html", nil)
 }
 
 func GetGameRoom(c *gin.Context) {
-	c.HTML(http.StatusOK, "room.html", gin.H{})
+	c.HTML(http.StatusOK, "room.html", nil)
 }
 
 func GetRoomStatus(c *gin.Context) {
@@ -172,16 +153,12 @@ func GetRoomStatus(c *gin.Context) {
 		return
 	}
 
-	nextRoundStart := hub.GetNextRoundStartTime()
-
 	hub.CurrentRound.Mu.RLock()
 	state := hub.CurrentRound.State
 	hub.CurrentRound.Mu.RUnlock()
 
-	response := gin.H{
+	c.JSON(http.StatusOK, gin.H{
 		"state":          state,
-		"nextRoundStart": nextRoundStart.UnixMilli(),
-	}
-
-	c.JSON(http.StatusOK, response)
+		"nextRoundStart": hub.GetNextRoundStartTime().UnixMilli(),
+	})
 }
